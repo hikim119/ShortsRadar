@@ -578,8 +578,10 @@ function plainEmbed(id){
     'allowfullscreen style="width:100%;height:100%;border:0"></iframe>');
 }
 function tiktokEmbed(ttid){
-  resetFrame('<iframe src="https://www.tiktok.com/embed/v2/'+ttid+
-    '" allow="autoplay; encrypted-media" allowfullscreen '+
+  // player/v1 = 틱톡 공식 iframe 전용 플레이어 (embed/v2는 iframe 직접 삽입 시 검은화면)
+  resetFrame('<iframe src="https://www.tiktok.com/player/v1/'+ttid+
+    '?autoplay=1&description=0&music_info=0" '+
+    'allow="autoplay; encrypted-media; fullscreen" allowfullscreen '+
     'style="width:100%;height:100%;border:0"></iframe>');
 }
 function loadYT(){
