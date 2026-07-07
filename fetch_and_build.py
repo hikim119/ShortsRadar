@@ -347,8 +347,9 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
 .dock.on{display:flex}
 body.dopen .wrap{margin-right:410px;max-width:none}
 .dframe{align-self:center;aspect-ratio:9/16;background:#000;border-radius:12px;
-  overflow:hidden;width:min(100%,calc((100vh - 190px)*9/16))}
-.dframe iframe{width:100%;height:100%;border:0}
+  overflow:hidden;width:min(100%,calc((100vh - 210px)*9/16))}
+.dframe iframe,.dframe div{width:100%;height:100%;border:0}
+.dhint{color:#565a6e;font-size:10px;text-align:center}
 .dtitle{font-size:13px;font-weight:700;line-height:1.45;max-height:2.9em;overflow:hidden}
 .dmeta{color:var(--mut);font-size:12px}
 .mrow{display:flex;gap:8px}
@@ -377,13 +378,16 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 <div class="empty" id="empty" style="display:none">조건에 맞는 숏츠가 없습니다 — 기간을 늘리거나 조회수 구간을 바꿔보세요.</div>
 
 <aside class="dock" id="dock">
-  <div class="dframe"><iframe id="pframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+  <div class="dframe"><div id="pframe"></div></div>
   <div class="dtitle" id="dtitle"></div>
   <div class="dmeta" id="dmeta"></div>
   <div class="mrow">
-    <a class="mbtn" id="mopen" href="#" target="_blank">YouTube에서 열기 ↗</a>
-    <button class="mbtn" onclick="closeM()">닫기 (Esc)</button>
+    <button class="mbtn" onclick="nav(-1)">▲ 이전</button>
+    <button class="mbtn" onclick="nav(1)">▼ 다음</button>
+    <a class="mbtn" id="mopen" href="#" target="_blank">YouTube ↗</a>
+    <button class="mbtn" onclick="closeM()">닫기</button>
   </div>
+  <div class="dhint">마우스 휠 · ↑↓ 키로 이동 &nbsp;|&nbsp; 영상이 끝나면 자동으로 다음 ▶</div>
 </aside>
 <footer>YouTube Data API · 인기 차트 + 조회수순 검색 (US · Film&nbsp;&amp;&nbsp;Animation) · 증가속도는 수집 간(4h) 조회수 변화 기준</footer>
 </div><script>
@@ -422,6 +426,7 @@ function render(){
   else if(srt==="p")rows.sort((a,b)=>b.p-a.p);
   else rows.sort((a,b)=>(b.g||-1)-(a.g||-1));
   rows=rows.slice(0,120);
+  RCUR=rows;   // 재생 독의 이전/다음 순서 = 현재 필터·정렬 결과
   document.getElementById("count").textContent=rows.length+"개";
   document.getElementById("empty").style.display=rows.length?"none":"block";
   document.getElementById("grid").innerHTML=rows.map((d,i)=>{
@@ -442,32 +447,74 @@ function render(){
           <span class="age">${age(d.p)}</span></div>
         ${metaHtml}</div></a>`;}).join("");
 }
-// ── 오른쪽 재생 독 ──
-// 일반 클릭 = 독에서 재생(목록 유지, 카드 클릭으로 즉시 전환)
-// Ctrl·휠클릭 = 유튜브 새 탭 (기본 링크 동작)
+// ── 오른쪽 재생 독 (숏츠식 연속 재생) ──
+// 클릭 = 독에서 재생 · 휠/↑↓/버튼 = 이전·다음 · 영상 끝 = 자동 다음
+// Ctrl·휠클릭 = 유튜브 새 탭
+let RCUR=[], ytp=null, pendingId=null, curIdx=-1, navT=0;
+
+function loadYT(){
+  if(window.YT&&YT.Player){onYTReady();return;}
+  const s=document.createElement("script");
+  s.src="https://www.youtube.com/iframe_api";document.head.appendChild(s);
+}
+window.onYouTubeIframeAPIReady=function(){onYTReady();};
+function onYTReady(){
+  if(ytp)return;
+  ytp=new YT.Player("pframe",{width:"100%",height:"100%",videoId:pendingId,
+    playerVars:{autoplay:1,rel:0,playsinline:1},
+    events:{onStateChange:e=>{if(e.data===0)nav(1);}}});   // 끝나면 자동 다음
+}
 function play(e,id){
-  if(e.ctrlKey||e.metaKey||e.button===1)return true;
-  e.preventDefault();
-  const d=DATA.find(x=>x.i===id);
-  document.getElementById("pframe").src=
-    "https://www.youtube.com/embed/"+id+"?autoplay=1&rel=0&playsinline=1";
+  if(e&&(e.ctrlKey||e.metaKey||e.button===1))return true;
+  if(e)e.preventDefault();
+  curIdx=RCUR.findIndex(x=>x.i===id);
+  openDock(id);
+  return false;
+}
+function openDock(id){
+  const d=RCUR[curIdx]&&RCUR[curIdx].i===id?RCUR[curIdx]:DATA.find(x=>x.i===id);
   document.getElementById("dtitle").textContent=d?d.t:"";
   document.getElementById("dmeta").textContent=
-    d?`${d.c} · ${fmt(d.v)} 조회 · ${age(d.p)}`:"";
+    d?`${curIdx+1}/${RCUR.length} · ${d.c} · ${fmt(d.v)} 조회 · ${age(d.p)}`:"";
   document.getElementById("mopen").href="https://www.youtube.com/shorts/"+id;
   document.getElementById("dock").classList.add("on");
   document.body.classList.add("dopen");
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
-  const el=document.getElementById("c-"+id); if(el)el.classList.add("sel");
-  return false;
+  const el=document.getElementById("c-"+id);
+  if(el){el.classList.add("sel");el.scrollIntoView({block:"nearest",behavior:"smooth"});}
+  if(!ytp){pendingId=id;loadYT();}
+  else ytp.loadVideoById(id);
+}
+function nav(dir){
+  const t=Date.now(); if(t-navT<350)return; navT=t;   // 과속 방지
+  if(!RCUR.length||curIdx<0)return;
+  const n=curIdx+dir;
+  if(n<0||n>=RCUR.length)return;
+  curIdx=n; openDock(RCUR[n].i);
 }
 function closeM(){
   document.getElementById("dock").classList.remove("on");
   document.body.classList.remove("dopen");
-  document.getElementById("pframe").src="";   // 재생 정지
+  if(ytp)ytp.stopVideo();
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
 }
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeM();});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){closeM();return;}
+  if(!document.getElementById("dock").classList.contains("on"))return;
+  if(e.key==="ArrowDown"){e.preventDefault();nav(1);}
+  if(e.key==="ArrowUp"){e.preventDefault();nav(-1);}
+});
+// 독 위에서 휠 = 이전/다음 (플레이어 화면 밖 영역)
+document.getElementById("dock").addEventListener("wheel",e=>{
+  e.preventDefault();nav(e.deltaY>0?1:-1);},{passive:false});
+// 터치 스와이프 (모바일)
+let tY=null;
+document.getElementById("dock").addEventListener("touchstart",e=>{tY=e.touches[0].clientY;});
+document.getElementById("dock").addEventListener("touchend",e=>{
+  if(tY===null)return;
+  const dy=tY-e.changedTouches[0].clientY;
+  if(Math.abs(dy)>60)nav(dy>0?1:-1);
+  tY=null;});
 render();
 </script></body></html>"""
 
