@@ -214,6 +214,14 @@ function tiktokEmbed(ttid){
     'allow="autoplay; encrypted-media; fullscreen" allowfullscreen '+
     'style="width:100%;height:100%;border:0"></iframe>');
 }
+// 틱톡 플레이어는 autoplay 시 기본 음소거로 시작 → 준비되면 unMute 명령 전송
+window.addEventListener("message",ev=>{
+  if(ev.origin!=="https://www.tiktok.com")return;
+  let m=ev.data;
+  if(typeof m==="string"){try{m=JSON.parse(m);}catch(_){return;}}
+  if(m&&m["x-tiktok-player"]&&m.type==="onPlayerReady")
+    ev.source.postMessage({"x-tiktok-player":true,type:"unMute"},ev.origin);
+});
 function loadYT(){
   if(loadYT.called)return; loadYT.called=true;
   if(window.YT&&YT.Player){onYTReady();return;}
