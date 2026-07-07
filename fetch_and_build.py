@@ -7,7 +7,8 @@ ShortsRadar — 미국 인기 숏츠 스크리너 (Playboard 스타일)
 기록: docs/data/history.json에 조회수 스냅샷 누적 → 증가속도 계산
 
 사용: YT_API_KEY 환경변수 필요.  (테스트: python fetch_and_build.py --mock)
-쿼터: 실행당 ~1,110유닛 × 6회/일 ≈ 6,700 (일일 무료 10,000 이내)
+쿼터: 실행당 ~1,315유닛 × 6회/일 ≈ 7,900 (일일 무료 10,000 이내)
+      SEARCH_PLAN 수정 시 합계가 한도를 넘지 않게 주의
 """
 import json
 import os
@@ -26,11 +27,22 @@ PAGES       = 4       # mostPopular 최대 200개 (50×4)
 KEEP_DAYS   = 35      # 기록 보관 일수 (30일 필터 지원)
 KST         = timezone(timedelta(hours=9))
 
-# 검색 수집 페이지 수 — 1페이지 = 100유닛 = 50개
-SEARCH_WEEK_PAGES  = 3   # 최근 7일 · 조회수순
-SEARCH_NEW_PAGES   = 2   # 최근 48시간 · 조회수순
-SEARCH_MONTH_PAGES = 2   # 최근 30일 · 조회수순
-SEARCH_QUERY       = ""  # 검색어 필터 (예: "movie recap"). "" = 전체
+# ── 검색 수집 계획 ───────────────────────────────────────────────────────────
+# (검색어 or None, 카테고리ID or None, 기간, 페이지수, duration)
+#   기간: "1h"=1시간, "2d"=48시간, "7d"=7일, "30d"=30일
+#   duration: "short"=4분 미만 / "medium"=4~20분 (4~5분짜리 보완)
+#   비용: 1페이지 = 100유닛 = 최대 50개.  전체 유닛 합계가 하루 한도(10,000)를
+#   넘지 않게 조절 (현재 계획: 13페이지 ≈ 1,315유닛/회 × 6회 ≈ 7,900/일)
+SEARCH_PLAN = [
+    # 영화/애니메이션 카테고리 (기본)
+    (None, "1", "1h", 1, "short"),
+    (None, "1", "2d", 2, "short"), (None, "1", "2d", 1, "medium"),
+    (None, "1", "7d", 2, "short"), (None, "1", "7d", 1, "medium"),
+    (None, "1", "30d", 1, "short"), (None, "1", "30d", 1, "medium"),
+    # 영화 리캡류는 엔터테인먼트(24)로 올라오는 경우가 많음 → 키워드로 보강
+    ("movie recap", None, "7d", 1, "short"), ("movie recap", None, "30d", 1, "short"),
+    ("movie", "24", "7d", 1, "short"), ("movie", "24", "30d", 1, "short"),
+]
 
 ROOT     = Path(__file__).resolve().parent
 DOCS     = ROOT / "docs"
@@ -86,17 +98,19 @@ def fetch_popular_all_then_filter(key):
     return [v for v in items if v["snippet"].get("categoryId") == CATEGORY_ID]
 
 
-def search_short_ids(key, published_after, pages, duration="short"):
+def search_short_ids(key, published_after, pages, duration="short",
+                     query=None, category=None):
     """search.list: 기간 내 조회수순 후보 ID 수집.
-    duration: 'short'=4분 미만, 'medium'=4~20분 (4~5분짜리 보완용)."""
+    query/category 중 최소 하나로 범위를 좁힌다."""
     ids, token = [], None
     for _ in range(pages):
         q = {"part": "id", "type": "video", "videoDuration": duration,
-             "videoCategoryId": CATEGORY_ID, "regionCode": REGION,
-             "order": "viewCount", "publishedAfter": published_after,
-             "maxResults": 50, "key": key}
-        if SEARCH_QUERY:
-            q["q"] = SEARCH_QUERY
+             "regionCode": REGION, "order": "viewCount",
+             "publishedAfter": published_after, "maxResults": 50, "key": key}
+        if category:
+            q["videoCategoryId"] = category
+        if query:
+            q["q"] = query
         if token:
             q["pageToken"] = token
         url = SEARCH_API + "?" + urllib.parse.urlencode(q)
@@ -108,6 +122,9 @@ def search_short_ids(key, published_after, pages, duration="short"):
         if not token:
             break
     return ids
+
+
+_WIN = {"1h": {"hours": 1}, "2d": {"days": 2}, "7d": {"days": 7}, "30d": {"days": 30}}
 
 
 def fetch_details(key, ids):
@@ -399,19 +416,18 @@ def main():
             sys.exit(1)
         chart_items = fetch_popular(key)
         print(f"인기 차트 {len(chart_items)}개")
-        # 검색으로 풀 확장 (medium 1페이지 = 4~5분짜리 보완, 5분 초과는 필터로 탈락)
-        ts = lambda **kw: (now - timedelta(**kw)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        pool = (search_short_ids(key, ts(days=30), SEARCH_MONTH_PAGES)
-                + search_short_ids(key, ts(days=30), 1, "medium")
-                + search_short_ids(key, ts(days=7), SEARCH_WEEK_PAGES)
-                + search_short_ids(key, ts(days=7), 1, "medium")
-                + search_short_ids(key, ts(days=2), SEARCH_NEW_PAGES)
-                + search_short_ids(key, ts(days=2), 1, "medium")
-                + search_short_ids(key, ts(hours=1), 1))
+        # SEARCH_PLAN에 따라 검색 수집 (5분 초과는 아래 필터로 탈락)
+        pool = []
+        for query, cat, win, pages, dur in SEARCH_PLAN:
+            after = (now - timedelta(**_WIN[win])).strftime("%Y-%m-%dT%H:%M:%SZ")
+            got = search_short_ids(key, after, pages, dur, query=query, category=cat)
+            label = query or f"cat{cat}"
+            print(f"  검색[{label} · {win} · {dur}] {len(got)}개")
+            pool += got
         known = {v["id"] for v in chart_items}
         extra_ids = [i for i in dict.fromkeys(pool) if i not in known]
         extra_items = fetch_details(key, extra_ids)
-        print(f"검색 수집 +{len(extra_items)}개")
+        print(f"검색 수집 합계 +{len(extra_items)}개 (중복 제거 후)")
         items = chart_items + extra_items
 
     shorts = [v for v in items if dur_seconds(v["contentDetails"]["duration"]) <= MAX_DUR_S]
