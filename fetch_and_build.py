@@ -346,8 +346,10 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
   padding:14px;gap:10px;box-shadow:-14px 0 44px rgba(0,0,0,.5)}
 .dock.on{display:flex}
 body.dopen .wrap{margin-right:410px;max-width:none}
-.dframe{align-self:center;aspect-ratio:9/16;background:#000;border-radius:12px;
+/* dclip = 고정 틀(클리핑) · dframe = 슬라이드 전환되는 내용물 */
+.dclip{align-self:center;aspect-ratio:9/16;background:#000;border-radius:12px;
   overflow:hidden;width:min(100%,calc((100vh - 210px)*9/16));position:relative}
+.dframe{width:100%;height:100%;will-change:transform}
 .dframe iframe,.dframe #pframe{width:100%;height:100%;border:0}
 .dhint{color:#565a6e;font-size:10px;text-align:center}
 /* 모바일 스와이프 레일: 플레이어(iframe)가 터치를 가로채므로
@@ -388,8 +390,10 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 <div class="empty" id="empty" style="display:none">조건에 맞는 숏츠가 없습니다 — 기간을 늘리거나 조회수 구간을 바꿔보세요.</div>
 
 <aside class="dock" id="dock">
-  <div class="dframe"><div id="pframe"></div>
-    <div class="rail" id="rail"><span>⌃</span><span>⌄</span></div></div>
+  <div class="dclip">
+    <div class="dframe" id="dframe"><div id="pframe"></div></div>
+    <div class="rail" id="rail"><span>⌃</span><span>⌄</span></div>
+  </div>
   <div class="dtitle" id="dtitle"></div>
   <div class="dmeta" id="dmeta"></div>
   <div class="mrow">
@@ -497,11 +501,31 @@ function openDock(id){
   else ytp.loadVideoById(id);
 }
 function nav(dir){
-  const t=Date.now(); if(t-navT<350)return; navT=t;   // 과속 방지
+  const t=Date.now(); if(t-navT<420)return; navT=t;   // 과속 방지(애니메이션 길이만큼)
   if(!RCUR.length||curIdx<0)return;
   const n=curIdx+dir;
-  if(n<0||n>=RCUR.length)return;
-  curIdx=n; openDock(RCUR[n].i);
+  if(n<0||n>=RCUR.length){bounce(dir);return;}        // 끝이면 살짝 튕김
+  curIdx=n;
+  // 숏츠식 슬라이드: 현재 영상이 위(다음)/아래(이전)로 밀려나가고 새 영상이 반대편에서 진입
+  const f=document.getElementById("dframe");
+  f.style.transition="transform .16s ease-in,opacity .16s";
+  f.style.transform=`translateY(${-dir*106}%)`;
+  f.style.opacity=".3";
+  setTimeout(()=>{
+    openDock(RCUR[n].i);
+    f.style.transition="none";
+    f.style.transform=`translateY(${dir*106}%)`;
+    void f.offsetHeight;   // reflow — 순간이동을 확정한 뒤 슬라이드 인
+    f.style.transition="transform .22s ease-out,opacity .22s";
+    f.style.transform="translateY(0)";
+    f.style.opacity="1";
+  },165);
+}
+function bounce(dir){   // 목록 끝 피드백
+  const f=document.getElementById("dframe");
+  f.style.transition="transform .12s ease-out";
+  f.style.transform=`translateY(${-dir*4}%)`;
+  setTimeout(()=>{f.style.transform="translateY(0)";},120);
 }
 function closeM(){
   document.getElementById("dock").classList.remove("on");
