@@ -466,18 +466,33 @@ function render(){
 // 클릭 = 독에서 재생 · 휠/↑↓/버튼 = 이전·다음 · 영상 끝 = 자동 다음
 // Ctrl·휠클릭 = 유튜브 새 탭
 let RCUR=[], ytp=null, pendingId=null, curIdx=-1, navT=0;
+// file://(로컬 미리보기)나 API 로드 실패(광고차단 등) 시 → 단순 iframe 폴백
+let apiDead=(location.protocol==="file:");
 
+function plainEmbed(id){
+  document.getElementById("pframe").innerHTML=
+    '<iframe src="https://www.youtube.com/embed/'+id+
+    '?autoplay=1&rel=0&playsinline=1" allow="autoplay; encrypted-media" '+
+    'allowfullscreen style="width:100%;height:100%;border:0"></iframe>';
+}
 function loadYT(){
+  if(loadYT.called)return; loadYT.called=true;
   if(window.YT&&YT.Player){onYTReady();return;}
   const s=document.createElement("script");
-  s.src="https://www.youtube.com/iframe_api";document.head.appendChild(s);
+  s.src="https://www.youtube.com/iframe_api";
+  s.onerror=()=>{apiDead=true;if(pendingId)plainEmbed(pendingId);};
+  document.head.appendChild(s);
+  setTimeout(()=>{   // 2초 내 API 안 뜨면 폴백 (자동다음만 비활성, 재생은 보장)
+    if(!ytp&&!apiDead){apiDead=true;if(pendingId)plainEmbed(pendingId);}
+  },2000);
 }
 window.onYouTubeIframeAPIReady=function(){onYTReady();};
 function onYTReady(){
-  if(ytp)return;
+  if(ytp||apiDead)return;
   ytp=new YT.Player("pframe",{width:"100%",height:"100%",videoId:pendingId,
-    playerVars:{autoplay:1,rel:0,playsinline:1},
-    events:{onStateChange:e=>{if(e.data===0)nav(1);}}});   // 끝나면 자동 다음
+    playerVars:{autoplay:1,rel:0,playsinline:1,origin:location.origin},
+    events:{onReady:e=>e.target.playVideo(),               // 자동재생 확실히
+            onStateChange:e=>{if(e.data===0)nav(1);}}});   // 끝나면 자동 다음
 }
 function play(e,id){
   if(e&&(e.ctrlKey||e.metaKey||e.button===1))return true;
@@ -497,8 +512,10 @@ function openDock(id){
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
   const el=document.getElementById("c-"+id);
   if(el){el.classList.add("sel");el.scrollIntoView({block:"nearest",behavior:"smooth"});}
-  if(!ytp){pendingId=id;loadYT();}
-  else ytp.loadVideoById(id);
+  pendingId=id;
+  if(apiDead)plainEmbed(id);
+  else if(ytp)ytp.loadVideoById(id);
+  else loadYT();
 }
 function nav(dir){
   const t=Date.now(); if(t-navT<420)return; navT=t;   // 과속 방지(애니메이션 길이만큼)
@@ -531,6 +548,7 @@ function closeM(){
   document.getElementById("dock").classList.remove("on");
   document.body.classList.remove("dopen");
   if(ytp)ytp.stopVideo();
+  else document.getElementById("pframe").innerHTML="";   // 폴백 모드: iframe 제거로 정지
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
 }
 document.addEventListener("keydown",e=>{
