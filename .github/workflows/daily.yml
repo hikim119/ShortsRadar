@@ -26,6 +26,7 @@ jobs:
       - name: Fetch + build report
         env:
           YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}   # 없으면 틱톡 수집 건너뜀
         run: python fetch_and_build.py
 
       - name: Commit & push
