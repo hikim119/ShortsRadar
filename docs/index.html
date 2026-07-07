@@ -4,7 +4,8 @@
 <link rel="preconnect" href="https://www.youtube.com">
 <link rel="preconnect" href="https://i.ytimg.com">
 <link rel="preconnect" href="https://yt3.ggpht.com">
-<link rel="dns-prefetch" href="https://www.tiktok.com">
+<link rel="preconnect" href="https://www.tiktok.com">
+<link rel="dns-prefetch" href="https://lf16-tiktok-web.ttwstatic.com">
 <style>
 :root{--bg:#0b0b11;--panel:#14141d;--line:#23232f;--txt:#eceef6;--mut:#8b8fa3;
 --acc:#7c85f0;--acc2:#a78bfa;--green:#4ade80;--hot:#fb923c}
@@ -63,8 +64,18 @@ body.dopen .wrap{margin-right:410px;max-width:none}
 /* dclip = 고정 틀(클리핑) · dframe = 슬라이드 전환되는 내용물 */
 .dclip{align-self:center;aspect-ratio:9/16;background:#000;border-radius:12px;
   overflow:hidden;width:min(100%,calc((100vh - 210px)*9/16));position:relative}
-.dframe{width:100%;height:100%;will-change:transform}
-.dframe iframe,.dframe #pframe{width:100%;height:100%;border:0}
+.dframe{width:100%;height:100%;will-change:transform;position:relative}
+/* yslot=YT 플레이어(파괴하지 않고 재사용) · tslot=틱톡 iframe — display 토글로 전환 */
+.slot{position:absolute;inset:0}
+.slot iframe,#pframe{width:100%;height:100%;border:0}
+#tslot{display:none}
+/* 로딩 중 썸네일 포스터: 재생 시작 신호를 받으면 숨김 */
+#poster{position:absolute;inset:0;display:none;z-index:3;pointer-events:none;
+  background:#000 center/cover no-repeat}
+#poster::after{content:"";position:absolute;left:50%;top:50%;width:34px;height:34px;
+  margin:-17px 0 0 -17px;border:3px solid rgba(255,255,255,.22);border-top-color:#fff;
+  border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .dhint{color:#565a6e;font-size:10px;text-align:center}
 /* 모바일 스와이프 레일: 플레이어(iframe)가 터치를 가로채므로
    오른쪽 가장자리에 우리 소유의 터치 띠를 올린다 */
@@ -107,7 +118,11 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 
 <aside class="dock" id="dock">
   <div class="dclip">
-    <div class="dframe" id="dframe"><div id="pframe"></div></div>
+    <div class="dframe" id="dframe">
+      <div class="slot" id="yslot"><div id="pframe"></div></div>
+      <div class="slot" id="tslot"></div>
+      <div id="poster"></div>
+    </div>
     <div class="rail" id="rail"><span>⌃</span><span>⌄</span></div>
   </div>
   <div class="dtitle" id="dtitle"></div>
@@ -205,22 +220,42 @@ function resetFrame(html){
 function plainEmbed(id){
   resetFrame('<iframe src="https://www.youtube.com/embed/'+id+
     '?autoplay=1&rel=0&playsinline=1" allow="autoplay; encrypted-media" '+
-    'allowfullscreen style="width:100%;height:100%;border:0"></iframe>');
+    'onload="hidePoster()" allowfullscreen style="width:100%;height:100%;border:0"></iframe>');
 }
 function tiktokEmbed(ttid){
   // player/v1 = 틱톡 공식 iframe 전용 플레이어 (embed/v2는 iframe 직접 삽입 시 검은화면)
-  resetFrame('<iframe src="https://www.tiktok.com/player/v1/'+ttid+
+  document.getElementById("tslot").innerHTML=
+    '<iframe src="https://www.tiktok.com/player/v1/'+ttid+
     '?autoplay=1&description=0&music_info=0" '+
     'allow="autoplay; encrypted-media; fullscreen" allowfullscreen '+
-    'style="width:100%;height:100%;border:0"></iframe>');
+    'style="width:100%;height:100%;border:0"></iframe>';
 }
+function stopTT(){document.getElementById("tslot").innerHTML="";}   // iframe 제거 = 정지
+let curMode="y";   // 현재 보이는 슬롯: "y"=YouTube · "t"=틱톡
+function showSlot(m){
+  curMode=m;
+  document.getElementById("yslot").style.display=m==="y"?"block":"none";
+  document.getElementById("tslot").style.display=m==="t"?"block":"none";
+}
+let posterT=0;
+function showPoster(d){
+  const p=document.getElementById("poster");
+  p.style.backgroundImage=d?'url("'+(d.f?d.th:"https://i.ytimg.com/vi/"+d.i+"/hqdefault.jpg")+'")':"none";
+  p.style.display="block";
+  clearTimeout(posterT);
+  posterT=setTimeout(hidePoster,5000);   // 재생 신호를 못 받아도 5초 후엔 제거
+}
+function hidePoster(){clearTimeout(posterT);document.getElementById("poster").style.display="none";}
 // 틱톡 플레이어는 autoplay 시 기본 음소거로 시작 → 준비되면 unMute 명령 전송
 window.addEventListener("message",ev=>{
   if(ev.origin!=="https://www.tiktok.com")return;
   let m=ev.data;
   if(typeof m==="string"){try{m=JSON.parse(m);}catch(_){return;}}
-  if(m&&m["x-tiktok-player"]&&m.type==="onPlayerReady")
+  if(!m||!m["x-tiktok-player"])return;
+  if(m.type==="onPlayerReady"){
     ev.source.postMessage({"x-tiktok-player":true,type:"unMute"},ev.origin);
+    hidePoster();
+  }
 });
 function loadYT(){
   if(loadYT.called)return; loadYT.called=true;
@@ -239,7 +274,9 @@ function onYTReady(){
   ytp=new YT.Player("pframe",{width:"100%",height:"100%",videoId:pendingId,
     playerVars:{autoplay:1,rel:0,playsinline:1,origin:location.origin},
     events:{onReady:e=>e.target.playVideo(),               // 자동재생 확실히
-            onStateChange:e=>{if(e.data===0)nav(1);},      // 끝나면 자동 다음
+            // stopVideo(틱톡 전환·닫기)도 ended(0)를 쏠 수 있어 YT 슬롯일 때만 자동 다음
+            onStateChange:e=>{if(e.data===1)hidePoster();
+                              if(e.data===0&&curMode==="y")nav(1);},
             onError:e=>{                                    // 오류 153 등 → 자동 폴백
               if(e.data===101||e.data===150){nav(1);return;} // 임베드 금지 영상 → 스킵
               apiDead=true;
@@ -268,13 +305,19 @@ function openDock(id){
   const el=document.getElementById("c-"+id);
   if(el){el.classList.add("sel");el.scrollIntoView({block:"nearest",behavior:"smooth"});}
   pendingId=id;
-  if(d&&d.f==="t"){                      // 🎵 틱톡 → 틱톡 임베드
-    if(ytp){try{ytp.destroy();}catch(_){} ytp=null;}
+  showPoster(d);
+  if(d&&d.f==="t"){                      // 🎵 틱톡 → 틱톡 슬롯 (YT 플레이어는 살려둠)
+    showSlot("t");                       // curMode 먼저 바꿔야 stopVideo의 ended가 무시됨
+    if(ytp){try{ytp.stopVideo();}catch(_){}}
     tiktokEmbed(id.slice(3));            // "tt_" 접두사 제거
-  }else if(apiDead)plainEmbed(id);
-  else if(ytp)ytp.loadVideoById(id);
-  else if(window.YT&&YT.Player)onYTReady();   // 틱톡 재생 후 YT 복귀 등
-  else loadYT();
+  }else{                                 // ▶ YouTube → YT 슬롯 (플레이어 재사용 = 즉시 로드)
+    showSlot("y");
+    stopTT();
+    if(apiDead)plainEmbed(id);
+    else if(ytp)ytp.loadVideoById(id);
+    else if(window.YT&&YT.Player)onYTReady();
+    else loadYT();
+  }
 }
 function nav(dir){
   const t=Date.now(); if(t-navT<420)return; navT=t;   // 과속 방지(애니메이션 길이만큼)
@@ -302,8 +345,11 @@ function bounce(dir){   // 목록 끝 피드백
 function closeM(){
   document.getElementById("dock").classList.remove("on");
   document.body.classList.remove("dopen");
+  curIdx=-1;             // stopVideo가 ended(0)를 쏴도 nav()가 독을 다시 열지 않게
   if(ytp)ytp.stopVideo();
-  else resetFrame("");   // 폴백/틱톡 모드: iframe 제거로 정지
+  else resetFrame("");   // 폴백 모드: iframe 제거로 정지
+  stopTT();
+  hidePoster();
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
 }
 document.addEventListener("keydown",e=>{
