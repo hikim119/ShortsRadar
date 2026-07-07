@@ -90,14 +90,14 @@ body.dopen .wrap{margin-right:410px;max-width:none}
   flex-direction:column;justify-content:space-between;align-items:center;
   padding:14px 0;color:rgba(255,255,255,.55);font-size:20px;touch-action:none;
   background:linear-gradient(to left,rgba(0,0,0,.28),transparent)}
-/* 이전/다음: 플레이어 오른쪽 가장자리에 세로 배치 (모바일은 스와이프 레일이 대신) */
+/* 이전/다음: 플레이어 오른쪽 가장자리 세로 배치 — 모바일에서도 표시(오른손 엄지 조작) */
 .snav{position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:4;
-  display:flex;flex-direction:column;gap:10px}
-.snav button{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);
+  display:flex;flex-direction:column;gap:14px}
+.snav button{width:46px;height:46px;border-radius:50%;border:1px solid var(--line);
   background:rgba(16,16,24,.72);color:var(--txt);font-size:16px;cursor:pointer;
   backdrop-filter:blur(4px);transition:.12s}
 .snav button:hover{border-color:var(--acc);background:rgba(124,133,240,.3)}
-@media(max-width:900px){.snav{display:none}}
+.snav button:active{background:rgba(124,133,240,.45)}
 @media(max-width:900px){
   .rail{display:flex}
   .mbtn{padding:11px 16px;font-size:14px}
