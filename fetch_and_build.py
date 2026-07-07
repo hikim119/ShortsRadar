@@ -133,18 +133,22 @@ _WIN = {"1h": {"hours": 1}, "1d": {"days": 1}, "2d": {"days": 2},
         "7d": {"days": 7}, "30d": {"days": 30}}
 
 
-CHANNELS_FILE = ROOT / "channels.json"
+CHANNELS_FILE = ROOT / "channels.txt"
 CHANNELS_API  = "https://www.googleapis.com/youtube/v3/channels"
 PLAYLIST_API  = "https://www.googleapis.com/youtube/v3/playlistItems"
 
 
 def load_channel_refs():
-    """channels.json의 관심 채널 목록. 없거나 비면 []."""
+    """channels.txt의 관심 채널 목록 — 한 줄에 하나(또는 띄어쓰기 구분),
+    '#' 주석·빈 줄 무시. 없으면 []."""
     try:
-        data = json.loads(CHANNELS_FILE.read_text(encoding="utf-8"))
-        return [str(c).strip() for c in data.get("channels", []) if str(c).strip()]
-    except (OSError, json.JSONDecodeError) as e:
-        print(f"  ⚠ channels.json 읽기 실패: {e}")
+        refs = []
+        for line in CHANNELS_FILE.read_text(encoding="utf-8-sig").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line:
+                refs += line.split()
+        return refs
+    except OSError:
         return []
 
 
@@ -348,7 +352,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
   <div class="frow"><span class="flabel">조회수</span><span id="buckets"></span></div>
   <div class="frow"><span class="flabel">정렬</span><span id="sorts"></span></div>
   <div class="frow"><span class="flabel">채널</span><span id="chans"></span>
-    <a class="pill edit" href="https://github.com/hikim119/ShortsRadar/edit/main/channels.json"
+    <a class="pill edit" href="https://github.com/hikim119/ShortsRadar/edit/main/channels.txt"
        target="_blank">✏️ 관심 채널 편집</a></div>
 </div>
 
