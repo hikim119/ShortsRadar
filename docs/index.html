@@ -302,16 +302,23 @@ function showPoster(d){
   posterT=setTimeout(hidePoster,5000);   // 재생 신호를 못 받아도 5초 후엔 제거
 }
 function hidePoster(){clearTimeout(posterT);document.getElementById("poster").style.display="none";}
-// 모바일 자동재생 차단 대응: 1.5초 내 재생 시작이 없으면 음소거로라도 재생 + 소리 켜기 버튼.
-// 버튼 탭(사용자 제스처)으로 unMute하면 플레이어를 재사용하므로 이후 영상은 계속 소리 유지
+// 모바일 자동재생 차단 대응: 재생이 안 붙으면 ① 소리 그대로 재시도 → ② 그래도 안 되면
+// 음소거로 재생 + 소리 켜기 버튼. 소리 자동재생이 되는 기기(안드로이드 등)는 ①에서 끝나고,
+// 진짜 차단하는 기기(iOS)만 ②로 감. 버튼 한 번 탭 후엔 플레이어 재사용으로 소리 유지
 let playT=0;
 function watchPlay(){
   clearTimeout(playT);
   playT=setTimeout(()=>{
     if(curMode!=="y"||!ytp||!ytp.getPlayerState)return;
-    const s=ytp.getPlayerState();   // 1=재생중 3=버퍼링
-    if(s!==1&&s!==3){try{ytp.mute();ytp.playVideo();showUnmute();}catch(_){}}
-  },1500);
+    let s=ytp.getPlayerState();     // 1=재생중 3=버퍼링
+    if(s===1||s===3)return;
+    try{ytp.playVideo();}catch(_){} // ① 소리 유지한 채 재시도 (느린 로딩이었으면 이걸로 재생)
+    playT=setTimeout(()=>{
+      if(curMode!=="y"||!ytp)return;
+      s=ytp.getPlayerState();
+      if(s!==1&&s!==3){try{ytp.mute();ytp.playVideo();showUnmute();}catch(_){}}  // ② 음소거 폴백
+    },1200);
+  },1600);
 }
 function showUnmute(){document.getElementById("unmute").classList.add("on");}
 function hideUnmute(){document.getElementById("unmute").classList.remove("on");}
