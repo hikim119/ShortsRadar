@@ -133,6 +133,63 @@ _WIN = {"1h": {"hours": 1}, "1d": {"days": 1}, "2d": {"days": 2},
         "7d": {"days": 7}, "30d": {"days": 30}}
 
 
+CHANNELS_FILE = ROOT / "channels.json"
+CHANNELS_API  = "https://www.googleapis.com/youtube/v3/channels"
+PLAYLIST_API  = "https://www.googleapis.com/youtube/v3/playlistItems"
+
+
+def load_channel_refs():
+    """channels.json의 관심 채널 목록. 없거나 비면 []."""
+    try:
+        data = json.loads(CHANNELS_FILE.read_text(encoding="utf-8"))
+        return [str(c).strip() for c in data.get("channels", []) if str(c).strip()]
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"  ⚠ channels.json 읽기 실패: {e}")
+        return []
+
+
+def resolve_channel_id(key, ref):
+    """URL/@핸들/UC아이디 → 채널 ID (UC...). 실패 시 None."""
+    r = ref.strip().rstrip("/")
+    if "/channel/" in r:
+        r = r.split("/channel/")[-1].split("/")[0].split("?")[0]
+    elif "youtube.com" in r:
+        r = r.split("youtube.com/")[-1].split("/")[0].split("?")[0]   # @handle
+    if r.startswith("UC") and len(r) == 24:
+        return r
+    handle = r if r.startswith("@") else "@" + r
+    q = {"part": "id", "forHandle": handle, "key": key}
+    url = CHANNELS_API + "?" + urllib.parse.urlencode(q)
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            items = json.load(resp).get("items", [])
+        return items[0]["id"] if items else None
+    except (urllib.error.URLError, KeyError, IndexError):
+        return None
+
+
+def fetch_channel_video_ids(key, channel_id, pages=1):
+    """채널 업로드 재생목록(UU...)에서 최신 영상 ID (페이지당 50개, 1유닛)."""
+    playlist = "UU" + channel_id[2:]
+    ids, token = [], None
+    for _ in range(pages):
+        q = {"part": "contentDetails", "playlistId": playlist,
+             "maxResults": 50, "key": key}
+        if token:
+            q["pageToken"] = token
+        url = PLAYLIST_API + "?" + urllib.parse.urlencode(q)
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                data = json.load(r)
+        except urllib.error.HTTPError:
+            return ids   # 비공개/삭제 채널 등
+        ids += [it["contentDetails"]["videoId"] for it in data.get("items", [])]
+        token = data.get("nextPageToken")
+        if not token:
+            break
+    return ids
+
+
 def fetch_details(key, ids):
     """videos.list로 ID 목록의 상세(스니펫·길이·조회수) 조회. 50개씩 배치."""
     out = []
@@ -251,6 +308,8 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
   transition:.12s}
 .pill:hover{color:var(--txt);border-color:#3a3a4d}
 .pill.on{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#fff;border-color:transparent}
+.pill.edit{border-style:dashed;color:var(--acc);text-decoration:none;display:inline-block}
+.pill.edit:hover{border-color:var(--acc)}
 .count{color:var(--mut);font-size:12px;margin-left:auto}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(225px,1fr));gap:15px;padding-bottom:40px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;
@@ -288,6 +347,9 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
     <span class="count" id="count"></span></div>
   <div class="frow"><span class="flabel">조회수</span><span id="buckets"></span></div>
   <div class="frow"><span class="flabel">정렬</span><span id="sorts"></span></div>
+  <div class="frow"><span class="flabel">채널</span><span id="chans"></span>
+    <a class="pill edit" href="https://github.com/hikim119/ShortsRadar/edit/main/channels.json"
+       target="_blank">✏️ 관심 채널 편집</a></div>
 </div>
 
 <div class="grid" id="grid"></div>
@@ -300,7 +362,8 @@ const BUCKETS=[[0,Infinity,"전체"],[1e5,5e5,"10만-50만"],[5e5,1e6,"50만-1�
   [1e6,5e6,"1백만-5백만"],[5e6,1e7,"5백만-1천만"],[1e7,Infinity,"1천만+"],
   [1e8,Infinity,"1억+"],[1e9,Infinity,"10억+"]];
 const SORTS=[["v","조회수"],["g","🔥 증가속도"],["p","최신"]];
-let win=1, bkt=0, srt="v";   // 기본: 24시간 · 전체 · 조회수순
+const CHANS=[["전체"],["📌 관심채널"]];
+let win=1, bkt=0, srt="v", chn=0;   // 기본: 24시간 · 전체 · 조회수순 · 전체채널
 
 function fmt(n){if(n>=1e8)return (n/1e8).toFixed(1)+"억";
   if(n>=1e4)return (n/1e4).toFixed(1)+"만";return n.toLocaleString();}
@@ -314,14 +377,16 @@ function pills(elId,arr,cur,fn){
     `<button class="pill${i===cur?" on":""}" onclick="${fn}(${i})">${a[a.length-1]}</button>`).join("");}
 
 function setWin(i){win=i;render();} function setBkt(i){bkt=i;render();}
-function setSrt(i){srt=SORTS[i][0];render();}
+function setSrt(i){srt=SORTS[i][0];render();} function setChn(i){chn=i;render();}
 
 function render(){
   pills("wins",WINS,win,"setWin");
   pills("buckets",BUCKETS,bkt,"setBkt");
   pills("sorts",SORTS,SORTS.findIndex(s=>s[0]===srt),"setSrt");
+  pills("chans",CHANS,chn,"setChn");
   const [lo,hi]=BUCKETS[bkt];
   let rows=DATA.filter(d=>NOW-d.p<=WINS[win][0]&&d.v>=lo&&d.v<hi);
+  if(chn===1)rows=rows.filter(d=>d.s);
   if(srt==="v")rows.sort((a,b)=>b.v-a.v);
   else if(srt==="p")rows.sort((a,b)=>b.p-a.p);
   else rows.sort((a,b)=>(b.g||-1)-(a.g||-1));
@@ -331,6 +396,7 @@ function render(){
   document.getElementById("grid").innerHTML=rows.map((d,i)=>{
     const g=d.g==null?"":`<span class="chip ${d.g>=10000?"hot":"g"}">+${fmt(d.g)}/h</span>`;
     const nw=(NOW-d.n)<93600?'<span class="chip new">NEW</span>':"";
+    const st=d.s?'<span class="chip new">📌</span>':"";
     const meta=[];
     if(d.w!=null)meta.push(`7일 조회 <b>${fmt(d.w)}</b>`);
     if(d.l!=null)meta.push(`좋아요 <b>${d.l}%</b>`);
@@ -340,7 +406,7 @@ function render(){
         <span class="rank">${i+1}</span><span class="dur">${durTxt(d.d)}</span></div>
       <div class="body"><div class="title">${d.t.replace(/</g,"&lt;")}</div>
         <div class="ch">${d.c.replace(/</g,"&lt;")}</div>
-        <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${nw}
+        <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${nw}${st}
           <span class="age">${age(d.p)}</span></div>
         ${metaHtml}</div></a>`;}).join("");
 }
@@ -367,7 +433,8 @@ def build_html(hist, now):
                      "g": int(g) if g is not None else None,
                      "d": r.get("dur"),
                      "w": int(w7) if w7 is not None else None,
-                     "l": round(likes / v_now * 100, 1) if (likes and v_now) else None})
+                     "l": round(likes / v_now * 100, 1) if (likes and v_now) else None,
+                     "s": 1 if r.get("ch") else 0})
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     stamp = now.astimezone(KST).strftime("%Y-%m-%d %H:%M KST")
     return (TEMPLATE.replace("__DATA__", payload)
@@ -414,6 +481,7 @@ def main():
 
     if mock:
         items = mock_items()
+        tracked_ids = {items[0]["id"], items[3]["id"]}   # 관심채널 배지 렌더 테스트
         print("MOCK 모드 (API 호출 없음)")
     else:
         key = os.environ.get("YT_API_KEY", "").strip()
@@ -430,6 +498,17 @@ def main():
             label = query or f"cat{cat}"
             print(f"  검색[{label} · {win} · {dur}] {len(got)}개")
             pool += got
+        # 📌 관심 채널: channels.json의 채널은 최근 업로드를 무조건 수집
+        tracked_ids = set()
+        for ref in load_channel_refs():
+            cid = resolve_channel_id(key, ref)
+            if not cid:
+                print(f"  ⚠ 채널 못 찾음: {ref}")
+                continue
+            vids = fetch_channel_video_ids(key, cid)
+            tracked_ids.update(vids)
+            pool += vids
+            print(f"  📌 관심채널 [{ref}] 최신 {len(vids)}개")
         known = {v["id"] for v in chart_items}
         extra_ids = [i for i in dict.fromkeys(pool) if i not in known]
         extra_items = fetch_details(key, extra_ids)
@@ -441,6 +520,9 @@ def main():
 
     hist = load_history()
     hist = update_history(hist, shorts, now_iso)
+    for vid in tracked_ids:
+        if vid in hist:
+            hist[vid]["ch"] = True    # 📌 관심채널 표시
     HISTORY.parent.mkdir(parents=True, exist_ok=True)
     HISTORY.write_text(json.dumps(hist, ensure_ascii=False), encoding="utf-8")
 
