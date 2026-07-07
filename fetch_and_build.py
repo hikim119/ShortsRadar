@@ -7,8 +7,8 @@ ShortsRadar — 미국 인기 숏츠 스크리너 (Playboard 스타일)
 기록: docs/data/history.json에 조회수 스냅샷 누적 → 증가속도 계산
 
 사용: YT_API_KEY 환경변수 필요.  (테스트: python fetch_and_build.py --mock)
-쿼터: 실행당 ~1,315유닛 × 6회/일 ≈ 7,900 (일일 무료 10,000 이내)
-      SEARCH_PLAN 수정 시 합계가 한도를 넘지 않게 주의
+쿼터: 실행당 ~1,515유닛 × 6회/일 ≈ 9,100 (일일 무료 10,000 이내 — 거의 상한)
+      SEARCH_PLAN 추가 시 한도 초과 주의: 1페이지 = +100유닛 × 6회 = +600/일
 """
 import json
 import os
@@ -42,6 +42,7 @@ SEARCH_PLAN = [
     # 영화 리캡류는 엔터테인먼트(24)로 올라오는 경우가 많음 → 키워드로 보강
     ("movie recap", None, "7d", 1, "short"), ("movie recap", None, "30d", 1, "short"),
     ("movie", "24", "7d", 1, "short"), ("movie", "24", "30d", 1, "short"),
+    ("film", None, "7d", 1, "short"), ("film", None, "30d", 1, "short"),
 ]
 
 ROOT     = Path(__file__).resolve().parent
