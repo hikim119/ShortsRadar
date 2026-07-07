@@ -340,17 +340,23 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
   padding-top:7px;margin-top:2px}
 .meta b{color:#c6c9d8;font-weight:700}
 .empty{color:var(--mut);padding:60px 0;text-align:center;font-size:13px}
-.modal{position:fixed;inset:0;background:rgba(5,5,10,.88);display:none;
-  align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(4px)}
-.modal.on{display:flex}
-.mwrap{display:flex;flex-direction:column;gap:10px;align-items:center}
-.mbox{height:min(82vh,780px);aspect-ratio:9/16;background:#000;border-radius:14px;
-  overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
-.mbox iframe{width:100%;height:100%;border:0}
+/* 오른쪽 재생 독: 목록을 보면서 재생, 카드 클릭으로 즉시 전환 */
+.dock{position:fixed;top:0;right:0;height:100vh;width:400px;background:#101018;
+  border-left:1px solid var(--line);z-index:20;display:none;flex-direction:column;
+  padding:14px;gap:10px;box-shadow:-14px 0 44px rgba(0,0,0,.5)}
+.dock.on{display:flex}
+body.dopen .wrap{margin-right:410px;max-width:none}
+.dframe{align-self:center;aspect-ratio:9/16;background:#000;border-radius:12px;
+  overflow:hidden;width:min(100%,calc((100vh - 190px)*9/16))}
+.dframe iframe{width:100%;height:100%;border:0}
+.dtitle{font-size:13px;font-weight:700;line-height:1.45;max-height:2.9em;overflow:hidden}
+.dmeta{color:var(--mut);font-size:12px}
 .mrow{display:flex;gap:8px}
 .mbtn{background:var(--panel);border:1px solid var(--line);color:var(--txt);
   padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;text-decoration:none}
 .mbtn:hover{border-color:var(--acc)}
+.card.sel{border-color:var(--acc);box-shadow:0 0 0 2px rgba(124,133,240,.35)}
+@media(max-width:900px){.dock{width:100vw}body.dopen .wrap{margin-right:0}}
 footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 @media(max-width:600px){.grid{grid-template-columns:repeat(2,1fr);gap:10px}}
 </style></head><body><div class="wrap">
@@ -370,15 +376,15 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 <div class="grid" id="grid"></div>
 <div class="empty" id="empty" style="display:none">조건에 맞는 숏츠가 없습니다 — 기간을 늘리거나 조회수 구간을 바꿔보세요.</div>
 
-<div class="modal" id="modal" onclick="if(event.target===this)closeM()">
-  <div class="mwrap">
-    <div class="mbox"><iframe id="pframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
-    <div class="mrow">
-      <a class="mbtn" id="mopen" href="#" target="_blank">YouTube에서 열기 ↗</a>
-      <button class="mbtn" onclick="closeM()">닫기 (Esc)</button>
-    </div>
+<aside class="dock" id="dock">
+  <div class="dframe"><iframe id="pframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+  <div class="dtitle" id="dtitle"></div>
+  <div class="dmeta" id="dmeta"></div>
+  <div class="mrow">
+    <a class="mbtn" id="mopen" href="#" target="_blank">YouTube에서 열기 ↗</a>
+    <button class="mbtn" onclick="closeM()">닫기 (Esc)</button>
   </div>
-</div>
+</aside>
 <footer>YouTube Data API · 인기 차트 + 조회수순 검색 (US · Film&nbsp;&amp;&nbsp;Animation) · 증가속도는 수집 간(4h) 조회수 변화 기준</footer>
 </div><script>
 const DATA=__DATA__, NOW=__NOW__;
@@ -426,7 +432,7 @@ function render(){
     if(d.w!=null)meta.push(`7일 조회 <b>${fmt(d.w)}</b>`);
     if(d.l!=null)meta.push(`좋아요 <b>${d.l}%</b>`);
     const metaHtml=meta.length?`<div class="meta">${meta.join("<span>·</span>")}</div>`:"";
-    return `<a class="card" href="https://www.youtube.com/shorts/${d.i}" target="_blank"
+    return `<a class="card" id="c-${d.i}" href="https://www.youtube.com/shorts/${d.i}" target="_blank"
         onclick="return play(event,'${d.i}')">
       <div class="th"><img loading="lazy" src="https://i.ytimg.com/vi/${d.i}/hqdefault.jpg">
         <span class="rank">${i+1}</span><span class="dur">${durTxt(d.d)}</span></div>
@@ -436,20 +442,30 @@ function render(){
           <span class="age">${age(d.p)}</span></div>
         ${metaHtml}</div></a>`;}).join("");
 }
-// ── 인페이지 플레이어 ──
-// 일반 클릭 = 사이트 내 팝업 재생 / Ctrl·휠클릭 = 유튜브 새 탭 (기본 링크 동작)
+// ── 오른쪽 재생 독 ──
+// 일반 클릭 = 독에서 재생(목록 유지, 카드 클릭으로 즉시 전환)
+// Ctrl·휠클릭 = 유튜브 새 탭 (기본 링크 동작)
 function play(e,id){
   if(e.ctrlKey||e.metaKey||e.button===1)return true;
   e.preventDefault();
+  const d=DATA.find(x=>x.i===id);
   document.getElementById("pframe").src=
     "https://www.youtube.com/embed/"+id+"?autoplay=1&rel=0&playsinline=1";
+  document.getElementById("dtitle").textContent=d?d.t:"";
+  document.getElementById("dmeta").textContent=
+    d?`${d.c} · ${fmt(d.v)} 조회 · ${age(d.p)}`:"";
   document.getElementById("mopen").href="https://www.youtube.com/shorts/"+id;
-  document.getElementById("modal").classList.add("on");
+  document.getElementById("dock").classList.add("on");
+  document.body.classList.add("dopen");
+  document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
+  const el=document.getElementById("c-"+id); if(el)el.classList.add("sel");
   return false;
 }
 function closeM(){
-  document.getElementById("modal").classList.remove("on");
+  document.getElementById("dock").classList.remove("on");
+  document.body.classList.remove("dopen");
   document.getElementById("pframe").src="";   // 재생 정지
+  document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
 }
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeM();});
 render();
