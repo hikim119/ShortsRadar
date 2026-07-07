@@ -2,7 +2,7 @@
 """
 ShortsRadar — 미국 인기 숏츠 스크리너 (Playboard 스타일)
 
-수집: YouTube 인기 차트 + 조회수순 검색(1시간/48시간/7일/30일 창)
+수집: YouTube 인기 차트 + 조회수순 검색(1시간/24시간/48시간/7일 창)
 표시: 기간 × 조회수 구간 × 정렬 필터를 클라이언트(JS)에서 즉시 적용
 기록: docs/data/history.json에 조회수 스냅샷 누적 → 증가속도 계산
 
@@ -24,27 +24,26 @@ REGION      = "US"    # 국가
 CATEGORY_ID = "1"     # 1 = Film & Animation (영화/애니메이션)
 MAX_DUR_S   = 300     # 이 길이(초) 이하만 표시 — 5분 미만
 PAGES       = 4       # mostPopular 최대 200개 (50×4)
-KEEP_DAYS   = 35      # 기록 보관 일수 (30일 필터 지원)
+KEEP_DAYS   = 8       # 기록 보관 일수 (7일 필터 + 1일 여유)
 KST         = timezone(timedelta(hours=9))
 
 # ── 검색 수집 계획 ───────────────────────────────────────────────────────────
 # (검색어 or None, 카테고리ID or None, 기간, 페이지수, duration)
-#   기간: "1h"=1시간, "2d"=48시간, "7d"=7일, "30d"=30일
+#   기간: "1h"=1시간, "1d"=24시간, "2d"=48시간, "7d"=7일
 #   duration: "short"=4분 미만 / "medium"=4~20분 (4~5분짜리 보완)
 #   비용: 1페이지 = 100유닛 = 최대 50개.  전체 유닛 합계가 하루 한도(10,000)를
-#   넘지 않게 조절 (현재 계획: 13페이지 ≈ 1,315유닛/회 × 6회 ≈ 7,900/일)
+#   넘지 않게 조절 (현재 계획: 12페이지 ≈ 1,200유닛/회 × 6회 ≈ 7,200/일)
 SEARCH_PLAN = [
     # 영화/애니메이션 카테고리 (기본)
     (None, "1", "1h", 1, "short"),
     (None, "1", "1d", 2, "short"),                                  # 24시간 전용
     (None, "1", "2d", 1, "short"), (None, "1", "2d", 1, "medium"),
     (None, "1", "7d", 2, "short"), (None, "1", "7d", 1, "medium"),
-    (None, "1", "30d", 1, "short"), (None, "1", "30d", 1, "medium"),
     # 영화 리캡류는 엔터테인먼트(24)로 올라오는 경우가 많음 → 키워드로 보강
     ("movie recap", None, "1d", 1, "short"),
-    ("movie recap", None, "7d", 1, "short"), ("movie recap", None, "30d", 1, "short"),
+    ("movie recap", None, "7d", 1, "short"),
     ("movie", "24", "1d", 1, "short"),
-    ("movie", "24", "7d", 1, "short"), ("movie", "24", "30d", 1, "short"),
+    ("movie", "24", "7d", 1, "short"),
 ]
 
 ROOT     = Path(__file__).resolve().parent
@@ -323,7 +322,15 @@ def update_history(hist, shorts, now_iso):
         rec["snapshots"].append({"t": now_iso, "views": views})
         rec["snapshots"] = rec["snapshots"][-60:]
     cutoff = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)).isoformat()
-    for vid in [k for k, r in hist.items() if r.get("last_seen", "") < cutoff]:
+
+    # 오래 안 보인 영상 + 게시일이 보관 기간을 지난 영상(검색에 계속 잡혀도 표시 불가) 제거
+    def expired(r):
+        if r.get("last_seen", "") < cutoff:
+            return True
+        pub = r.get("publishedAt", "")
+        return bool(pub) and pub < cutoff
+
+    for vid in [k for k, r in hist.items() if expired(r)]:
         del hist[vid]
     return hist
 
@@ -403,6 +410,13 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
 .card:hover{transform:translateY(-4px);border-color:var(--acc);box-shadow:0 8px 24px rgba(124,133,240,.15)}
 .th{position:relative;aspect-ratio:16/9;background:#000}
 .th img{width:100%;height:100%;object-fit:cover;display:block}
+/* 카드 삭제(✕): 데스크톱은 호버 시 표시, 터치 기기는 항상 옅게 표시 */
+.del{position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:50%;
+  border:0;background:rgba(0,0,0,.55);color:#fff;font-size:12px;line-height:1;
+  cursor:pointer;opacity:0;transition:.12s;z-index:2}
+.card:hover .del{opacity:1}
+.del:hover{background:#e5484d}
+@media(hover:none){.del{opacity:.6}}
 .rank{position:absolute;top:8px;left:10px;font-size:20px;font-weight:900;color:#fff;
   text-shadow:0 1px 6px rgba(0,0,0,.9)}
 .dur{position:absolute;bottom:7px;right:8px;background:rgba(0,0,0,.75);color:#fff;
@@ -451,6 +465,14 @@ body.dopen .wrap{margin-right:410px;max-width:none}
   flex-direction:column;justify-content:space-between;align-items:center;
   padding:14px 0;color:rgba(255,255,255,.55);font-size:20px;touch-action:none;
   background:linear-gradient(to left,rgba(0,0,0,.28),transparent)}
+/* 이전/다음: 플레이어 오른쪽 가장자리에 세로 배치 (모바일은 스와이프 레일이 대신) */
+.snav{position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:4;
+  display:flex;flex-direction:column;gap:10px}
+.snav button{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);
+  background:rgba(16,16,24,.72);color:var(--txt);font-size:16px;cursor:pointer;
+  backdrop-filter:blur(4px);transition:.12s}
+.snav button:hover{border-color:var(--acc);background:rgba(124,133,240,.3)}
+@media(max-width:900px){.snav{display:none}}
 @media(max-width:900px){
   .rail{display:flex}
   .mbtn{padding:11px 16px;font-size:14px}
@@ -477,11 +499,11 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
   <div class="frow"><span class="flabel">정렬</span><span id="sorts"></span></div>
   <div class="frow"><span class="flabel">채널</span><span id="chans"></span>
     <a class="pill edit" href="https://github.com/hikim119/ShortsRadar/edit/main/channels.txt"
-       target="_blank">✏️ 관심 채널 편집</a>
-    <span class="flabel" style="margin-left:14px">표시</span><span id="aifs"></span></div>
+       target="_blank">✏️ 관심 채널 편집</a></div>
 </div>
 
 <div class="grid" id="grid"></div>
+<div id="sent" style="height:1px"></div>
 <div class="empty" id="empty" style="display:none">조건에 맞는 숏츠가 없습니다 — 기간을 늘리거나 조회수 구간을 바꿔보세요.</div>
 
 <aside class="dock" id="dock">
@@ -492,12 +514,14 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
       <div id="poster"></div>
     </div>
     <div class="rail" id="rail"><span>⌃</span><span>⌄</span></div>
+    <div class="snav">
+      <button onclick="nav(-1)" title="이전 (↑)">▲</button>
+      <button onclick="nav(1)" title="다음 (↓)">▼</button>
+    </div>
   </div>
   <div class="dtitle" id="dtitle"></div>
   <div class="dmeta" id="dmeta"></div>
   <div class="mrow">
-    <button class="mbtn" onclick="nav(-1)">▲ 이전</button>
-    <button class="mbtn" onclick="nav(1)">▼ 다음</button>
     <a class="mbtn" id="mopen" href="#" target="_blank">YouTube ↗</a>
     <button class="mbtn" onclick="closeM()">닫기</button>
   </div>
@@ -506,15 +530,29 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 <footer>YouTube Data API · 인기 차트 + 조회수순 검색 (US · Film&nbsp;&amp;&nbsp;Animation) · 증가속도는 수집 간(4h) 조회수 변화 기준</footer>
 </div><script>
 const DATA=__DATA__, NOW=__NOW__;
-const WINS=[[3600,"1시간"],[86400,"24시간"],[604800,"7일"],[1296000,"15일"],[2592000,"30일"]];
-const BUCKETS=[[0,Infinity,"전체"],[1e5,5e5,"10만-50만"],[5e5,1e6,"50만-1백만"],
-  [1e6,5e6,"1백만-5백만"],[5e6,1e7,"5백만-1천만"],[1e7,Infinity,"1천만+"],
-  [1e8,Infinity,"1억+"],[1e9,Infinity,"10억+"]];
+const WINS=[[3600,"1시간"],[86400,"1일"],[259200,"3일"],[604800,"7일"]];
+const BUCKETS=[[0,Infinity,"전체"],[1e5,5e5,"10만-50만"],[5e5,1e6,"50만-100만"],
+  [1e6,5e6,"100만-500만"],[5e6,Infinity,"500만+"]];
 const SORTS=[["v","조회수"],["g","🔥 증가속도"],["p","최신"]];
 const CHANS=[["전체"],["📌 관심채널"]];
-const AIFS=[["전체"],["🤖 AI 제외"]];
 const PFS=[["전체"],["▶ YouTube"],["🎵 TikTok"]];
-let win=1, bkt=0, srt="v", chn=0, aif=1, pfl=0;   // 기본: 24시간·전체·조회수순·AI제외
+let win=1, bkt=0, srt="v", chn=0, pfl=0;   // 기본: 1일·전체·조회수순 (AI 영상은 항상 제외)
+// 삭제 목록: 카드 ✕ 버튼 → localStorage 저장(브라우저별) · 8일 지난 기록은 자동 정리
+const DELKEY="sr_del";
+let DEL={};
+try{DEL=JSON.parse(localStorage.getItem(DELKEY)||"{}")||{};}catch(_){DEL={};}
+function saveDel(){try{localStorage.setItem(DELKEY,JSON.stringify(DEL));}catch(_){}}
+{let ch=false;const cut=NOW-8*86400;   // 그 시점엔 데이터에서도 이미 빠져 있음
+ for(const k in DEL)if(DEL[k]<cut){delete DEL[k];ch=true;}
+ if(ch)saveDel();}
+function delVideo(e,id){
+  e.preventDefault();e.stopPropagation();
+  DEL[id]=NOW; saveDel();
+  if(pendingId===id)closeM();          // 재생 중이던 영상을 지우면 독 닫기
+  render();
+  if(pendingId&&pendingId!==id)curIdx=RCUR.findIndex(x=>x.i===pendingId);  // 순번 보정
+  return false;
+}
 
 function fmt(n){if(n>=1e8)return (n/1e8).toFixed(1)+"억";
   if(n>=1e4)return (n/1e4).toFixed(1)+"만";return n.toLocaleString();}
@@ -529,49 +567,63 @@ function pills(elId,arr,cur,fn){
 
 function setWin(i){win=i;render();} function setBkt(i){bkt=i;render();}
 function setSrt(i){srt=SORTS[i][0];render();} function setChn(i){chn=i;render();}
-function setAif(i){aif=i;render();} function setPfl(i){pfl=i;render();}
+function setPfl(i){pfl=i;render();}
 
 function render(){
   pills("wins",WINS,win,"setWin");
   pills("buckets",BUCKETS,bkt,"setBkt");
   pills("sorts",SORTS,SORTS.findIndex(s=>s[0]===srt),"setSrt");
   pills("chans",CHANS,chn,"setChn");
-  pills("aifs",AIFS,aif,"setAif");
   pills("pfs",PFS,pfl,"setPfl");
   const [lo,hi]=BUCKETS[bkt];
   let rows=DATA.filter(d=>NOW-d.p<=WINS[win][0]&&d.v>=lo&&d.v<hi);
   if(chn===1)rows=rows.filter(d=>d.s);
-  if(aif===1)rows=rows.filter(d=>!d.a);
+  rows=rows.filter(d=>!d.a);   // AI 영상은 항상 제외
+  rows=rows.filter(d=>!DEL[d.i]);   // 사용자가 ✕로 지운 영상 제외
   if(pfl===1)rows=rows.filter(d=>!d.f);
   if(pfl===2)rows=rows.filter(d=>d.f==="t");
   if(srt==="v")rows.sort((a,b)=>b.v-a.v);
   else if(srt==="p")rows.sort((a,b)=>b.p-a.p);
   else rows.sort((a,b)=>(b.g||-1)-(a.g||-1));
-  rows=rows.slice(0,120);
-  RCUR=rows;   // 재생 독의 이전/다음 순서 = 현재 필터·정렬 결과
+  RCUR=rows;   // 재생 독의 이전/다음 순서 = 현재 필터·정렬 결과 (상한 없음)
+  rendered=0;
   document.getElementById("count").textContent=rows.length+"개";
   document.getElementById("empty").style.display=rows.length?"none":"block";
-  document.getElementById("grid").innerHTML=rows.map((d,i)=>{
-    const g=d.g==null?"":`<span class="chip ${d.g>=10000?"hot":"g"}">+${fmt(d.g)}/h</span>`;
-    const nw=(NOW-d.n)<93600?'<span class="chip new">NEW</span>':"";
-    const st=d.s?'<span class="chip new">📌</span>':"";
-    const ac=d.a?'<span class="chip ai">AI</span>':"";
-    const pc=d.f?'<span class="chip tt">TikTok</span>':"";
-    const url=d.f?d.u:`https://www.youtube.com/shorts/${d.i}`;
-    const th=d.f?d.th:`https://i.ytimg.com/vi/${d.i}/hqdefault.jpg`;
-    const meta=[];
-    if(d.w!=null)meta.push(`7일 조회 <b>${fmt(d.w)}</b>`);
-    if(d.l!=null)meta.push(`좋아요 <b>${d.l}%</b>`);
-    const metaHtml=meta.length?`<div class="meta">${meta.join("<span>·</span>")}</div>`:"";
-    return `<a class="card" id="c-${d.i}" href="${url}" target="_blank"
-        onclick="return play(event,'${d.i}')">
-      <div class="th"><img loading="lazy" src="${th}">
-        <span class="rank">${i+1}</span><span class="dur">${durTxt(d.d)}</span></div>
-      <div class="body"><div class="title">${d.t.replace(/</g,"&lt;")}</div>
-        <div class="ch">${d.c.replace(/</g,"&lt;")}</div>
-        <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${nw}${st}${ac}${pc}
-          <span class="age">${age(d.p)}</span></div>
-        ${metaHtml}</div></a>`;}).join("");
+  document.getElementById("grid").innerHTML="";
+  appendChunk();
+}
+function cardHTML(d,i){
+  const g=d.g==null?"":`<span class="chip ${d.g>=10000?"hot":"g"}">+${fmt(d.g)}/h</span>`;
+  const nw=(NOW-d.n)<93600?'<span class="chip new">NEW</span>':"";
+  const st=d.s?'<span class="chip new">📌</span>':"";
+  const ac=d.a?'<span class="chip ai">AI</span>':"";
+  const pc=d.f?'<span class="chip tt">TikTok</span>':"";
+  const url=d.f?d.u:`https://www.youtube.com/shorts/${d.i}`;
+  const th=d.f?d.th:`https://i.ytimg.com/vi/${d.i}/hqdefault.jpg`;
+  const meta=[];
+  if(d.w!=null)meta.push(`7일 조회 <b>${fmt(d.w)}</b>`);
+  if(d.l!=null)meta.push(`좋아요 <b>${d.l}%</b>`);
+  const metaHtml=meta.length?`<div class="meta">${meta.join("<span>·</span>")}</div>`:"";
+  return `<a class="card" id="c-${d.i}" href="${url}" target="_blank"
+      onclick="return play(event,'${d.i}')">
+    <div class="th"><img loading="lazy" src="${th}">
+      <span class="rank">${i+1}</span><span class="dur">${durTxt(d.d)}</span>
+      <button class="del" title="목록에서 삭제" onclick="return delVideo(event,'${d.i}')">✕</button></div>
+    <div class="body"><div class="title">${d.t.replace(/</g,"&lt;")}</div>
+      <div class="ch">${d.c.replace(/</g,"&lt;")}</div>
+      <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${nw}${st}${ac}${pc}
+        <span class="age">${age(d.p)}</span></div>
+      ${metaHtml}</div></a>`;
+}
+// 상한 제거 + 증분 렌더링: 스크롤이 가까워지면 120개씩 추가 → 목록이 커져도 첫 화면 즉시
+let rendered=0;
+function appendChunk(){
+  if(rendered>=RCUR.length)return;
+  const end=Math.min(rendered+120,RCUR.length);
+  document.getElementById("grid").insertAdjacentHTML("beforeend",
+    RCUR.slice(rendered,end).map((d,j)=>cardHTML(d,rendered+j)).join(""));
+  rendered=end;
+  sentIO.unobserve(sentEl);sentIO.observe(sentEl);   // 센티널 재평가: 아직 화면 근처면 연속 로드
 }
 // ── 오른쪽 재생 독 (숏츠식 연속 재생) ──
 // 클릭 = 독에서 재생 · 휠/↑↓/버튼 = 이전·다음 · 영상 끝 = 자동 다음
@@ -670,6 +722,8 @@ function openDock(id){
   document.getElementById("dock").classList.add("on");
   document.body.classList.add("dopen");
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
+  // 아직 렌더링 안 된 순번이면 해당 카드가 나올 때까지 청크 추가(하이라이트·스크롤 유지)
+  while(!document.getElementById("c-"+id)&&rendered<RCUR.length)appendChunk();
   const el=document.getElementById("c-"+id);
   if(el){el.classList.add("sel");el.scrollIntoView({block:"nearest",behavior:"smooth"});}
   pendingId=id;
@@ -739,6 +793,10 @@ document.getElementById("dock").addEventListener("touchend",e=>{
   tY=null;});
 document.getElementById("rail").addEventListener("touchmove",
   e=>e.preventDefault(),{passive:false});   // iOS: 레일 위 스와이프가 스크롤로 새는 것 방지
+const sentEl=document.getElementById("sent");
+const sentIO=new IntersectionObserver(es=>{if(es[0].isIntersecting)appendChunk();},
+  {rootMargin:"1600px"});   // 화면 1600px 앞에서 미리 다음 청크 로드
+sentIO.observe(sentEl);
 render();
 // 재생 시작 속도: 페이지 로드 직후 YT API·플레이어를 미리 준비 (첫 클릭 = 즉시 load)
 if(!apiDead)loadYT();
@@ -756,6 +814,8 @@ def build_html(hist, now):
             n = int(datetime.fromisoformat(r["first_seen"]).timestamp())
         except (ValueError, KeyError):
             continue
+        if now.timestamp() - p > KEEP_DAYS * 86400:
+            continue   # 표시 상한(7일)을 지난 영상은 페이로드에서 제외
         v_now = r["snapshots"][-1]["views"]
         likes = r.get("likes")
         w7 = views_7d(r, now)
