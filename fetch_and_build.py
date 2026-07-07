@@ -532,7 +532,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 const DATA=__DATA__, NOW=__NOW__;
 const WINS=[[3600,"1시간"],[86400,"1일"],[259200,"3일"],[604800,"7일"]];
 const BUCKETS=[[0,Infinity,"전체"],[1e5,5e5,"10만-50만"],[5e5,1e6,"50만-100만"],
-  [1e6,5e6,"100만-500만"],[5e6,Infinity,"500만+"]];
+  [1e6,5e6,"100만-500만"],[5e6,1e7,"500만-1000만"],[1e7,Infinity,"1000만+"]];
 const SORTS=[["v","조회수"],["g","🔥 증가속도"],["p","최신"]];
 const CHANS=[["전체"],["📌 관심채널"]];
 const PFS=[["전체"],["▶ YouTube"],["🎵 TikTok"]];
