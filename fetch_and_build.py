@@ -430,7 +430,6 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
 .chip.g{background:rgba(74,222,128,.12);color:var(--green)}
 .chip.hot{background:rgba(251,146,60,.14);color:var(--hot)}
 .chip.new{background:rgba(124,133,240,.14);color:var(--acc)}
-.chip.ai{background:#2a2333;color:#b08fd8}
 .chip.tt{background:#16323a;color:#5bc8d8}
 .age{color:#565a6e;font-size:11px;margin-left:auto}
 .meta{display:flex;gap:10px;color:var(--mut);font-size:11px;border-top:1px solid var(--line);
@@ -589,8 +588,7 @@ function render(){
   const [lo,hi]=BUCKETS[bkt];
   let rows=DATA.filter(d=>NOW-d.p<=WINS[win][0]&&d.v>=lo&&d.v<hi);
   if(chn===1)rows=rows.filter(d=>d.s);
-  rows=rows.filter(d=>!d.a);   // AI 영상은 항상 제외
-  rows=rows.filter(d=>!DEL[d.i]);   // 사용자가 ✕로 지운 영상 제외
+  rows=rows.filter(d=>!DEL[d.i]);   // 사용자가 ✕로 지운 영상 제외 (AI 영상은 수집 단계 제외)
   if(pfl===1)rows=rows.filter(d=>!d.f);
   if(pfl===2)rows=rows.filter(d=>d.f==="t");
   if(srt==="v")rows.sort((a,b)=>b.v-a.v);
@@ -607,22 +605,21 @@ function cardHTML(d,i){
   const g=d.g==null?"":`<span class="chip ${d.g>=10000?"hot":"g"}">+${fmt(d.g)}/h</span>`;
   const nw=(NOW-d.n)<93600?'<span class="chip new">NEW</span>':"";
   const st=d.s?'<span class="chip new">📌</span>':"";
-  const ac=d.a?'<span class="chip ai">AI</span>':"";
   const pc=d.f?'<span class="chip tt">TikTok</span>':"";
   const url=d.f?d.u:`https://www.youtube.com/shorts/${d.i}`;
-  const th=d.f?d.th:`https://i.ytimg.com/vi/${d.i}/hqdefault.jpg`;
+  const th=d.f?d.th:`https://i.ytimg.com/vi/${d.i}/mqdefault.jpg`;   // 16:9·경량(카드에 충분)
   const meta=[];
   if(d.w!=null)meta.push(`7일 조회 <b>${fmt(d.w)}</b>`);
   if(d.l!=null)meta.push(`좋아요 <b>${d.l}%</b>`);
   const metaHtml=meta.length?`<div class="meta">${meta.join("<span>·</span>")}</div>`:"";
   return `<a class="card" id="c-${d.i}" href="${url}" target="_blank"
       onclick="return play(event,'${d.i}')">
-    <div class="th"><img loading="lazy" src="${th}">
+    <div class="th"><img loading="lazy" decoding="async" src="${th}">
       <span class="rank">${i+1}</span><span class="dur">${durTxt(d.d)}</span>
       <button class="del" title="목록에서 삭제" onclick="return delVideo(event,'${d.i}')">✕</button></div>
     <div class="body"><div class="title">${d.t.replace(/</g,"&lt;")}</div>
       <div class="ch">${d.c.replace(/</g,"&lt;")}</div>
-      <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${nw}${st}${ac}${pc}
+      <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${nw}${st}${pc}
         <span class="age">${age(d.p)}</span></div>
       ${metaHtml}</div></a>`;
 }
@@ -671,7 +668,7 @@ function showSlot(m){
 let posterT=0;
 function showPoster(d){
   const p=document.getElementById("poster");
-  p.style.backgroundImage=d?'url("'+(d.f?d.th:"https://i.ytimg.com/vi/"+d.i+"/hqdefault.jpg")+'")':"none";
+  p.style.backgroundImage=d?'url("'+(d.f?d.th:"https://i.ytimg.com/vi/"+d.i+"/mqdefault.jpg")+'")':"none";   // 카드와 같은 이미지 → 캐시 재사용
   p.style.display="block";
   clearTimeout(posterT);
   posterT=setTimeout(hidePoster,5000);   // 재생 신호를 못 받아도 5초 후엔 제거
@@ -860,17 +857,24 @@ def build_html(hist, now):
             continue
         if now.timestamp() - p > KEEP_DAYS * 86400:
             continue   # 표시 상한(7일)을 지난 영상은 페이로드에서 제외
+        if r.get("ai"):
+            continue   # AI 영상은 항상 제외 → 페이로드에도 넣지 않음
         v_now = r["snapshots"][-1]["views"]
         likes = r.get("likes")
         w7 = views_7d(r, now)
+        # 값이 없는 필드는 키 자체를 생략해 페이로드 축소 (클라이언트는 undefined 허용)
         entry = {"i": vid, "t": r["title"], "c": r["channel"],
-                 "p": p, "n": n, "v": v_now,
-                 "g": int(g) if g is not None else None,
-                 "d": r.get("dur"),
-                 "w": int(w7) if w7 is not None else None,
-                 "l": round(likes / v_now * 100, 1) if (likes and v_now) else None,
-                 "s": 1 if r.get("ch") else 0,
-                 "a": 1 if r.get("ai") else 0}
+                 "p": p, "n": n, "v": v_now}
+        if g is not None:
+            entry["g"] = int(g)
+        if r.get("dur"):
+            entry["d"] = r["dur"]
+        if w7 is not None:
+            entry["w"] = int(w7)
+        if likes and v_now:
+            entry["l"] = round(likes / v_now * 100, 1)
+        if r.get("ch"):
+            entry["s"] = 1
         if r.get("pf") == "tt":   # 틱톡: 플랫폼·썸네일·원본링크
             entry["f"] = "t"
             entry["th"] = r.get("thumb", "")
