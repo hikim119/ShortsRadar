@@ -531,8 +531,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
   <div class="dtitle" id="dtitle"></div>
   <div class="dmeta" id="dmeta"></div>
   <div class="mrow">
-    <a class="mbtn" id="mopen" href="#" target="_blank">YouTube ↗</a>
-    <button class="mbtn" id="mcopy" onclick="copyUrl()">🔗 복사</button>
+    <button class="mbtn" id="mcopy" onclick="copyUrl()">url 복사</button>
     <button class="mbtn" onclick="closeM()">닫기</button>
     <button class="mbtn" onclick="nav(-1)" style="margin-left:auto">▲ 이전</button>
     <button class="mbtn" onclick="nav(1)">▼ 다음</button>
@@ -696,10 +695,12 @@ function watchPlay(){
 function showUnmute(){document.getElementById("unmute").classList.add("on");}
 function hideUnmute(){document.getElementById("unmute").classList.remove("on");}
 // 현재 영상의 원본 링크(YouTube/틱톡) 복사
+let curUrl="";
 function copyUrl(){
-  const u=document.getElementById("mopen").href;
+  const u=curUrl;
+  if(!u)return;
   const b=document.getElementById("mcopy");
-  const done=()=>{b.textContent="✓ 복사됨";setTimeout(()=>{b.textContent="🔗 복사";},1200);};
+  const done=()=>{b.textContent="✓ 복사됨";setTimeout(()=>{b.textContent="url 복사";},1200);};
   const fallback=()=>{
     const t=document.createElement("textarea");t.value=u;
     document.body.appendChild(t);t.select();
@@ -768,8 +769,7 @@ function openDock(id){
   document.getElementById("dtitle").textContent=d?d.t:"";
   document.getElementById("dmeta").textContent=
     d?`${curIdx+1}/${RCUR.length} · ${d.c} · ${fmt(d.v)} 조회 · ${age(d.p)}`:"";
-  document.getElementById("mopen").href=
-    (d&&d.f)?d.u:"https://www.youtube.com/shorts/"+id;
+  curUrl=(d&&d.f)?d.u:"https://www.youtube.com/shorts/"+id;   // 🔗 복사용 원본 링크
   document.getElementById("dock").classList.add("on");
   document.body.classList.add("dopen");
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
