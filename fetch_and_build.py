@@ -26,11 +26,52 @@ PAGES       = 4       # mostPopular 최대 200개 (50×4)
 KEEP_DAYS   = 14      # 기록 보관 일수
 KST         = timezone(timedelta(hours=9))
 
+# 검색 수집 (차트에 안 뜨는 인기 숏츠까지) — 검색 1페이지 = 100유닛
+SEARCH_WEEK_PAGES = 3    # 최근 7일 · 조회수순 (이번 주 풀 확장)
+SEARCH_NEW_PAGES  = 2    # 최근 48시간 · 조회수순 (오늘 탭 확장)
+SEARCH_QUERY      = ""   # 검색어 필터 (예: "movie recap"). "" = 전체
+
 ROOT     = Path(__file__).resolve().parent
 DOCS     = ROOT / "docs"
 HISTORY  = DOCS / "data" / "history.json"
 
-API = "https://www.googleapis.com/youtube/v3/videos"
+API        = "https://www.googleapis.com/youtube/v3/videos"
+SEARCH_API = "https://www.googleapis.com/youtube/v3/search"
+
+
+def search_short_ids(key, published_after, pages):
+    """search.list: 기간 내 조회수순 숏츠 후보 ID 수집 (videoDuration=short = 4분 미만)."""
+    ids, token = [], None
+    for _ in range(pages):
+        q = {"part": "id", "type": "video", "videoDuration": "short",
+             "videoCategoryId": CATEGORY_ID, "regionCode": REGION,
+             "order": "viewCount", "publishedAfter": published_after,
+             "maxResults": 50, "key": key}
+        if SEARCH_QUERY:
+            q["q"] = SEARCH_QUERY
+        if token:
+            q["pageToken"] = token
+        url = SEARCH_API + "?" + urllib.parse.urlencode(q)
+        with urllib.request.urlopen(url, timeout=30) as r:
+            data = json.load(r)
+        ids += [it["id"]["videoId"] for it in data.get("items", [])
+                if it.get("id", {}).get("videoId")]
+        token = data.get("nextPageToken")
+        if not token:
+            break
+    return ids
+
+
+def fetch_details(key, ids):
+    """videos.list로 ID 목록의 상세(스니펫·길이·조회수) 조회. 50개씩 배치."""
+    out = []
+    for i in range(0, len(ids), 50):
+        q = {"part": "snippet,contentDetails,statistics",
+             "id": ",".join(ids[i:i + 50]), "key": key}
+        url = API + "?" + urllib.parse.urlencode(q)
+        with urllib.request.urlopen(url, timeout=30) as r:
+            out += json.load(r).get("items", [])
+    return out
 
 
 def fetch_popular(key):
@@ -237,7 +278,7 @@ section{{display:none}} section.on{{display:block}}
 {'' if riser_cards else '<div class="empty">증가속도는 이틀째 실행부터 계산됩니다 (조회수 변화 비교가 필요).</div>'}</section>
 <section id="s2"><div class="grid">{week_cards or ''}</div>
 {'' if week_cards else '<div class="empty">아직 기록이 없습니다.</div>'}</section>
-<footer>YouTube Data API · mostPopular chart (region {REGION}, category {CATEGORY_ID}) · {MAX_DUR_S}초 이하만 숏츠로 표시 · 기록 {KEEP_DAYS}일 보관</footer>
+<footer>YouTube Data API · 인기 차트 + 조회수순 검색 (region {REGION}, category {CATEGORY_ID}) · {MAX_DUR_S}초 이하만 숏츠로 표시 · 기록 {KEEP_DAYS}일 보관</footer>
 <script>
 function tab(i){{for(let k=0;k<3;k++){{
 document.getElementById('s'+k).classList.toggle('on',k===i);
@@ -273,27 +314,43 @@ def main():
     now_iso = now.isoformat()
 
     if mock:
-        items = mock_items()
+        chart_items, fresh_ids = mock_items(), []
+        items = chart_items
         print("MOCK 모드 (API 호출 없음)")
     else:
         key = os.environ.get("YT_API_KEY", "").strip()
         if not key:
             print("환경변수 YT_API_KEY가 없습니다.", file=sys.stderr)
             sys.exit(1)
-        items = fetch_popular(key)
-    print(f"인기 영상 {len(items)}개 수신")
+        chart_items = fetch_popular(key)
+        print(f"인기 차트 {len(chart_items)}개")
+        # 검색으로 풀 확장: 차트에 안 뜨는 인기 숏츠까지
+        ts = lambda d: (now - timedelta(days=d)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        week_ids  = search_short_ids(key, ts(7), SEARCH_WEEK_PAGES)
+        fresh_ids = search_short_ids(key, ts(2), SEARCH_NEW_PAGES)
+        known = {v["id"] for v in chart_items}
+        extra_ids = [i for i in dict.fromkeys(week_ids + fresh_ids) if i not in known]
+        extra_items = fetch_details(key, extra_ids)
+        print(f"검색 수집 +{len(extra_items)}개 (주간 {len(week_ids)} · 48시간 {len(fresh_ids)})")
+        items = chart_items + extra_items
 
     shorts = [v for v in items if dur_seconds(v["contentDetails"]["duration"]) <= MAX_DUR_S]
-    print(f"숏츠({MAX_DUR_S}s 이하) {len(shorts)}개")
+    print(f"숏츠({MAX_DUR_S}s 이하) 총 {len(shorts)}개")
 
     hist = load_history()
     hist = update_history(hist, shorts, now_iso)
     HISTORY.parent.mkdir(parents=True, exist_ok=True)
     HISTORY.write_text(json.dumps(hist, ensure_ascii=False), encoding="utf-8")
 
-    html = build_html(hist, [v["id"] for v in shorts], now)
+    # 오늘 탭 = 차트 순위 숏츠 + 최근 48시간 조회수순 검색 숏츠 (중복 제거, 60개 상한)
+    short_ids = {v["id"] for v in shorts}
+    chart_short_ids = [v["id"] for v in chart_items if v["id"] in short_ids]
+    today_ids = list(dict.fromkeys(
+        chart_short_ids + [i for i in fresh_ids if i in short_ids]))[:60]
+
+    html = build_html(hist, today_ids, now)
     (DOCS / "index.html").write_text(html, encoding="utf-8")
-    print(f"완료: docs/index.html (기록 {len(hist)}개 영상)")
+    print(f"완료: docs/index.html (오늘 {len(today_ids)}개 / 기록 {len(hist)}개 영상)")
 
 
 if __name__ == "__main__":
