@@ -347,9 +347,19 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
 .dock.on{display:flex}
 body.dopen .wrap{margin-right:410px;max-width:none}
 .dframe{align-self:center;aspect-ratio:9/16;background:#000;border-radius:12px;
-  overflow:hidden;width:min(100%,calc((100vh - 210px)*9/16))}
-.dframe iframe,.dframe div{width:100%;height:100%;border:0}
+  overflow:hidden;width:min(100%,calc((100vh - 210px)*9/16));position:relative}
+.dframe iframe,.dframe #pframe{width:100%;height:100%;border:0}
 .dhint{color:#565a6e;font-size:10px;text-align:center}
+/* 모바일 스와이프 레일: 플레이어(iframe)가 터치를 가로채므로
+   오른쪽 가장자리에 우리 소유의 터치 띠를 올린다 */
+.rail{position:absolute;right:0;top:0;bottom:0;width:56px;z-index:2;display:none;
+  flex-direction:column;justify-content:space-between;align-items:center;
+  padding:14px 0;color:rgba(255,255,255,.55);font-size:20px;touch-action:none;
+  background:linear-gradient(to left,rgba(0,0,0,.28),transparent)}
+@media(max-width:900px){
+  .rail{display:flex}
+  .mbtn{padding:11px 16px;font-size:14px}
+}
 .dtitle{font-size:13px;font-weight:700;line-height:1.45;max-height:2.9em;overflow:hidden}
 .dmeta{color:var(--mut);font-size:12px}
 .mrow{display:flex;gap:8px}
@@ -378,7 +388,8 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 <div class="empty" id="empty" style="display:none">조건에 맞는 숏츠가 없습니다 — 기간을 늘리거나 조회수 구간을 바꿔보세요.</div>
 
 <aside class="dock" id="dock">
-  <div class="dframe"><div id="pframe"></div></div>
+  <div class="dframe"><div id="pframe"></div>
+    <div class="rail" id="rail"><span>⌃</span><span>⌄</span></div></div>
   <div class="dtitle" id="dtitle"></div>
   <div class="dmeta" id="dmeta"></div>
   <div class="mrow">
@@ -387,7 +398,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
     <a class="mbtn" id="mopen" href="#" target="_blank">YouTube ↗</a>
     <button class="mbtn" onclick="closeM()">닫기</button>
   </div>
-  <div class="dhint">마우스 휠 · ↑↓ 키로 이동 &nbsp;|&nbsp; 영상이 끝나면 자동으로 다음 ▶</div>
+  <div class="dhint">휠 · ↑↓ 키 · 모바일은 영상 오른쪽 가장자리 스와이프 &nbsp;|&nbsp; 끝나면 자동 다음 ▶</div>
 </aside>
 <footer>YouTube Data API · 인기 차트 + 조회수순 검색 (US · Film&nbsp;&amp;&nbsp;Animation) · 증가속도는 수집 간(4h) 조회수 변화 기준</footer>
 </div><script>
@@ -515,6 +526,8 @@ document.getElementById("dock").addEventListener("touchend",e=>{
   const dy=tY-e.changedTouches[0].clientY;
   if(Math.abs(dy)>60)nav(dy>0?1:-1);
   tY=null;});
+document.getElementById("rail").addEventListener("touchmove",
+  e=>e.preventDefault(),{passive:false});   // iOS: 레일 위 스와이프가 스크롤로 새는 것 방지
 render();
 </script></body></html>"""
 
