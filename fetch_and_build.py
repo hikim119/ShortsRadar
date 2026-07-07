@@ -7,8 +7,8 @@ ShortsRadar — 미국 인기 숏츠 스크리너 (Playboard 스타일)
 기록: docs/data/history.json에 조회수 스냅샷 누적 → 증가속도 계산
 
 사용: YT_API_KEY 환경변수 필요.  (테스트: python fetch_and_build.py --mock)
-쿼터: 실행당 ~1,515유닛 × 6회/일 ≈ 9,100 (일일 무료 10,000 이내 — 거의 상한)
-      SEARCH_PLAN 추가 시 한도 초과 주의: 1페이지 = +100유닛 × 6회 = +600/일
+쿼터: 실행당 ~1,915유닛 × 4회/일(6시간 간격) ≈ 7,700 (일일 무료 10,000 이내)
+      SEARCH_PLAN 추가 시 한도 초과 주의: 1페이지 = +100유닛 × 4회 = +400/일
 """
 import json
 import os
@@ -36,12 +36,16 @@ KST         = timezone(timedelta(hours=9))
 SEARCH_PLAN = [
     # 영화/애니메이션 카테고리 (기본)
     (None, "1", "1h", 1, "short"),
-    (None, "1", "2d", 2, "short"), (None, "1", "2d", 1, "medium"),
+    (None, "1", "1d", 2, "short"),                                  # 24시간 전용
+    (None, "1", "2d", 1, "short"), (None, "1", "2d", 1, "medium"),
     (None, "1", "7d", 2, "short"), (None, "1", "7d", 1, "medium"),
     (None, "1", "30d", 1, "short"), (None, "1", "30d", 1, "medium"),
     # 영화 리캡류는 엔터테인먼트(24)로 올라오는 경우가 많음 → 키워드로 보강
+    ("movie recap", None, "1d", 1, "short"),
     ("movie recap", None, "7d", 1, "short"), ("movie recap", None, "30d", 1, "short"),
+    ("movie", "24", "1d", 1, "short"),
     ("movie", "24", "7d", 1, "short"), ("movie", "24", "30d", 1, "short"),
+    ("film", None, "1d", 1, "short"),
     ("film", None, "7d", 1, "short"), ("film", None, "30d", 1, "short"),
 ]
 
@@ -125,7 +129,8 @@ def search_short_ids(key, published_after, pages, duration="short",
     return ids
 
 
-_WIN = {"1h": {"hours": 1}, "2d": {"days": 2}, "7d": {"days": 7}, "30d": {"days": 30}}
+_WIN = {"1h": {"hours": 1}, "1d": {"days": 1}, "2d": {"days": 2},
+        "7d": {"days": 7}, "30d": {"days": 30}}
 
 
 def fetch_details(key, ids):
@@ -276,7 +281,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 @media(max-width:600px){.grid{grid-template-columns:repeat(2,1fr);gap:10px}}
 </style></head><body><div class="wrap">
 <header><h1>📡 ShortsRadar</h1>
-<span class="sub">미국 · 영화/애니메이션 · 5분 미만 · 갱신 __STAMP__ (4시간 간격)</span></header>
+<span class="sub">미국 · 영화 숏츠 · 5분 미만 · 갱신 __STAMP__ (6시간 간격)</span></header>
 
 <div class="filters">
   <div class="frow"><span class="flabel">기간</span><span id="wins"></span>

@@ -2,7 +2,7 @@ name: daily-update
 
 on:
   schedule:
-    - cron: "0 */4 * * *"   # 4시간 간격 (UTC 0·4·8·12·16·20시 = KST 9·13·17·21·1·5시)
+    - cron: "0 */6 * * *"   # 6시간 간격 (UTC 0·6·12·18시 = KST 9·15·21·3시)
   workflow_dispatch: {}     # Actions 탭에서 수동 실행 버튼
   push:
     branches: [main]
