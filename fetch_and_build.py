@@ -492,7 +492,14 @@ function onYTReady(){
   ytp=new YT.Player("pframe",{width:"100%",height:"100%",videoId:pendingId,
     playerVars:{autoplay:1,rel:0,playsinline:1,origin:location.origin},
     events:{onReady:e=>e.target.playVideo(),               // 자동재생 확실히
-            onStateChange:e=>{if(e.data===0)nav(1);}}});   // 끝나면 자동 다음
+            onStateChange:e=>{if(e.data===0)nav(1);},      // 끝나면 자동 다음
+            onError:e=>{                                    // 오류 153 등 → 자동 폴백
+              if(e.data===101||e.data===150){nav(1);return;} // 임베드 금지 영상 → 스킵
+              apiDead=true;
+              try{ytp.destroy();}catch(_){}
+              ytp=null;
+              if(pendingId)plainEmbed(pendingId);
+            }}});
 }
 function play(e,id){
   if(e&&(e.ctrlKey||e.metaKey||e.button===1))return true;
@@ -634,6 +641,36 @@ def fmt_num(n):
 
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
+def collect(key, now):
+    """API 수집 전체. 반환: (items, tracked_ids)."""
+    chart_items = fetch_popular(key)
+    print(f"인기 차트 {len(chart_items)}개")
+    # SEARCH_PLAN에 따라 검색 수집 (5분 초과는 아래 필터로 탈락)
+    pool = []
+    for query, cat, win, pages, dur in SEARCH_PLAN:
+        after = (now - timedelta(**_WIN[win])).strftime("%Y-%m-%dT%H:%M:%SZ")
+        got = search_short_ids(key, after, pages, dur, query=query, category=cat)
+        label = query or f"cat{cat}"
+        print(f"  검색[{label} · {win} · {dur}] {len(got)}개")
+        pool += got
+    # 📌 관심 채널: channels.txt의 채널은 최근 업로드를 무조건 수집
+    tracked_ids = set()
+    for ref in load_channel_refs():
+        cid = resolve_channel_id(key, ref)
+        if not cid:
+            print(f"  ⚠ 채널 못 찾음: {ref}")
+            continue
+        vids = fetch_channel_video_ids(key, cid)
+        tracked_ids.update(vids)
+        pool += vids
+        print(f"  📌 관심채널 [{ref}] 최신 {len(vids)}개")
+    known = {v["id"] for v in chart_items}
+    extra_ids = [i for i in dict.fromkeys(pool) if i not in known]
+    extra_items = fetch_details(key, extra_ids)
+    print(f"검색 수집 합계 +{len(extra_items)}개 (중복 제거 후)")
+    return chart_items + extra_items, tracked_ids
+
+
 def main():
     mock = "--mock" in sys.argv
     now = datetime.now(timezone.utc)
@@ -648,32 +685,13 @@ def main():
         if not key:
             print("환경변수 YT_API_KEY가 없습니다.", file=sys.stderr)
             sys.exit(1)
-        chart_items = fetch_popular(key)
-        print(f"인기 차트 {len(chart_items)}개")
-        # SEARCH_PLAN에 따라 검색 수집 (5분 초과는 아래 필터로 탈락)
-        pool = []
-        for query, cat, win, pages, dur in SEARCH_PLAN:
-            after = (now - timedelta(**_WIN[win])).strftime("%Y-%m-%dT%H:%M:%SZ")
-            got = search_short_ids(key, after, pages, dur, query=query, category=cat)
-            label = query or f"cat{cat}"
-            print(f"  검색[{label} · {win} · {dur}] {len(got)}개")
-            pool += got
-        # 📌 관심 채널: channels.json의 채널은 최근 업로드를 무조건 수집
-        tracked_ids = set()
-        for ref in load_channel_refs():
-            cid = resolve_channel_id(key, ref)
-            if not cid:
-                print(f"  ⚠ 채널 못 찾음: {ref}")
-                continue
-            vids = fetch_channel_video_ids(key, cid)
-            tracked_ids.update(vids)
-            pool += vids
-            print(f"  📌 관심채널 [{ref}] 최신 {len(vids)}개")
-        known = {v["id"] for v in chart_items}
-        extra_ids = [i for i in dict.fromkeys(pool) if i not in known]
-        extra_items = fetch_details(key, extra_ids)
-        print(f"검색 수집 합계 +{len(extra_items)}개 (중복 제거 후)")
-        items = chart_items + extra_items
+        try:
+            items, tracked_ids = collect(key, now)
+        except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as e:
+            # 쿼터 초과 등 — 수집은 포기하되 기존 기록으로 페이지는 재생성
+            # (UI 수정사항이 데이터 수집 실패에 막혀 배포 안 되는 일 방지)
+            print(f"⚠ 수집 실패({e}) — 기존 기록으로 페이지만 재생성합니다")
+            items, tracked_ids = [], set()
 
     shorts = [v for v in items if dur_seconds(v["contentDetails"]["duration"]) <= MAX_DUR_S]
     print(f"숏츠({MAX_DUR_S}s 이하) 총 {len(shorts)}개")
