@@ -340,6 +340,17 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
   padding-top:7px;margin-top:2px}
 .meta b{color:#c6c9d8;font-weight:700}
 .empty{color:var(--mut);padding:60px 0;text-align:center;font-size:13px}
+.modal{position:fixed;inset:0;background:rgba(5,5,10,.88);display:none;
+  align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(4px)}
+.modal.on{display:flex}
+.mwrap{display:flex;flex-direction:column;gap:10px;align-items:center}
+.mbox{height:min(82vh,780px);aspect-ratio:9/16;background:#000;border-radius:14px;
+  overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.mbox iframe{width:100%;height:100%;border:0}
+.mrow{display:flex;gap:8px}
+.mbtn{background:var(--panel);border:1px solid var(--line);color:var(--txt);
+  padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;text-decoration:none}
+.mbtn:hover{border-color:var(--acc)}
 footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 @media(max-width:600px){.grid{grid-template-columns:repeat(2,1fr);gap:10px}}
 </style></head><body><div class="wrap">
@@ -358,6 +369,16 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 
 <div class="grid" id="grid"></div>
 <div class="empty" id="empty" style="display:none">조건에 맞는 숏츠가 없습니다 — 기간을 늘리거나 조회수 구간을 바꿔보세요.</div>
+
+<div class="modal" id="modal" onclick="if(event.target===this)closeM()">
+  <div class="mwrap">
+    <div class="mbox"><iframe id="pframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+    <div class="mrow">
+      <a class="mbtn" id="mopen" href="#" target="_blank">YouTube에서 열기 ↗</a>
+      <button class="mbtn" onclick="closeM()">닫기 (Esc)</button>
+    </div>
+  </div>
+</div>
 <footer>YouTube Data API · 인기 차트 + 조회수순 검색 (US · Film&nbsp;&amp;&nbsp;Animation) · 증가속도는 수집 간(4h) 조회수 변화 기준</footer>
 </div><script>
 const DATA=__DATA__, NOW=__NOW__;
@@ -405,7 +426,8 @@ function render(){
     if(d.w!=null)meta.push(`7일 조회 <b>${fmt(d.w)}</b>`);
     if(d.l!=null)meta.push(`좋아요 <b>${d.l}%</b>`);
     const metaHtml=meta.length?`<div class="meta">${meta.join("<span>·</span>")}</div>`:"";
-    return `<a class="card" href="https://www.youtube.com/shorts/${d.i}" target="_blank">
+    return `<a class="card" href="https://www.youtube.com/shorts/${d.i}" target="_blank"
+        onclick="return play(event,'${d.i}')">
       <div class="th"><img loading="lazy" src="https://i.ytimg.com/vi/${d.i}/hqdefault.jpg">
         <span class="rank">${i+1}</span><span class="dur">${durTxt(d.d)}</span></div>
       <div class="body"><div class="title">${d.t.replace(/</g,"&lt;")}</div>
@@ -414,6 +436,22 @@ function render(){
           <span class="age">${age(d.p)}</span></div>
         ${metaHtml}</div></a>`;}).join("");
 }
+// ── 인페이지 플레이어 ──
+// 일반 클릭 = 사이트 내 팝업 재생 / Ctrl·휠클릭 = 유튜브 새 탭 (기본 링크 동작)
+function play(e,id){
+  if(e.ctrlKey||e.metaKey||e.button===1)return true;
+  e.preventDefault();
+  document.getElementById("pframe").src=
+    "https://www.youtube.com/embed/"+id+"?autoplay=1&rel=0&playsinline=1";
+  document.getElementById("mopen").href="https://www.youtube.com/shorts/"+id;
+  document.getElementById("modal").classList.add("on");
+  return false;
+}
+function closeM(){
+  document.getElementById("modal").classList.remove("on");
+  document.getElementById("pframe").src="";   // 재생 정지
+}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeM();});
 render();
 </script></body></html>"""
 
