@@ -1,6 +1,8 @@
 <!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ShortsRadar — 미국 인기 숏츠</title>
+<link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://www.youtube.com">
 <link rel="preconnect" href="https://i.ytimg.com">
 <link rel="preconnect" href="https://yt3.ggpht.com">
@@ -83,7 +85,6 @@ body.dopen .wrap{margin-right:410px;max-width:none}
   margin:-17px 0 0 -17px;border:3px solid rgba(255,255,255,.22);border-top-color:#fff;
   border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.dhint{color:#565a6e;font-size:10px;text-align:center}
 /* 모바일 스와이프 레일: 플레이어(iframe)가 터치를 가로채므로
    오른쪽 가장자리에 우리 소유의 터치 띠를 올린다 */
 .rail{position:absolute;right:0;top:0;bottom:0;width:56px;z-index:2;display:none;
@@ -156,11 +157,11 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
   <div class="dmeta" id="dmeta"></div>
   <div class="mrow">
     <a class="mbtn" id="mopen" href="#" target="_blank">YouTube ↗</a>
+    <button class="mbtn" id="mcopy" onclick="copyUrl()">🔗 복사</button>
     <button class="mbtn" onclick="closeM()">닫기</button>
     <button class="mbtn" onclick="nav(-1)" style="margin-left:auto">▲ 이전</button>
     <button class="mbtn" onclick="nav(1)">▼ 다음</button>
   </div>
-  <div class="dhint">휠 · ↑↓ 키 · 모바일은 영상 오른쪽 가장자리 스와이프 &nbsp;|&nbsp; 끝나면 자동 다음 ▶</div>
 </aside>
 <footer>YouTube Data API · 인기 차트 + 조회수순 검색 (US · Film&nbsp;&amp;&nbsp;Animation) · 증가속도는 수집 간(4h) 조회수 변화 기준</footer>
 </div><script>
@@ -319,6 +320,21 @@ function watchPlay(){
 }
 function showUnmute(){document.getElementById("unmute").classList.add("on");}
 function hideUnmute(){document.getElementById("unmute").classList.remove("on");}
+// 현재 영상의 원본 링크(YouTube/틱톡) 복사
+function copyUrl(){
+  const u=document.getElementById("mopen").href;
+  const b=document.getElementById("mcopy");
+  const done=()=>{b.textContent="✓ 복사됨";setTimeout(()=>{b.textContent="🔗 복사";},1200);};
+  const fallback=()=>{
+    const t=document.createElement("textarea");t.value=u;
+    document.body.appendChild(t);t.select();
+    try{document.execCommand("copy");done();}catch(_){}
+    t.remove();
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(u).then(done,fallback);
+  else fallback();
+}
 function doUnmute(){
   if(curMode==="y"){if(ytp){ytp.unMute();ytp.playVideo();}}
   else{const f=document.querySelector("#tslot iframe");
