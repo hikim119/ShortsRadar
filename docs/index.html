@@ -65,7 +65,8 @@ h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,var(--acc),va
 /* 오른쪽 재생 독: 목록을 보면서 재생, 카드 클릭으로 즉시 전환 */
 .dock{position:fixed;top:0;right:0;height:100vh;width:400px;background:#101018;
   border-left:1px solid var(--line);z-index:20;display:none;flex-direction:column;
-  padding:14px;gap:10px;box-shadow:-14px 0 44px rgba(0,0,0,.5)}
+  padding:14px;gap:10px;box-shadow:-14px 0 44px rgba(0,0,0,.5);
+  touch-action:none}   /* 독 어디서든(영상 화면 제외) 스와이프가 스크롤로 새지 않게 */
 .dock.on{display:flex}
 body.dopen .wrap{margin-right:410px;max-width:none}
 /* dclip = 고정 틀(클리핑) · dframe = 슬라이드 전환되는 내용물 */
@@ -99,6 +100,12 @@ body.dopen .wrap{margin-right:410px;max-width:none}
   backdrop-filter:blur(4px);transition:.12s}
 .snav button:hover{border-color:var(--acc);background:rgba(124,133,240,.3)}
 .snav button:active{background:rgba(124,133,240,.45)}
+/* 자동재생이 음소거로 시작된 경우 표시되는 소리 켜기 버튼 */
+#unmute{position:absolute;left:10px;bottom:12px;z-index:5;display:none;
+  background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.3);color:#fff;
+  padding:9px 15px;border-radius:999px;font-size:13px;cursor:pointer;
+  backdrop-filter:blur(4px)}
+#unmute.on{display:block}
 @media(max-width:900px){
   .rail{display:flex}
   .mbtn{padding:11px 16px;font-size:14px}
@@ -144,6 +151,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
       <button onclick="nav(-1)" title="이전 (↑)">▲</button>
       <button onclick="nav(1)" title="다음 (↓)">▼</button>
     </div>
+    <button id="unmute" onclick="return doUnmute()">🔇 소리 켜기</button>
   </div>
   <div class="dtitle" id="dtitle"></div>
   <div class="dmeta" id="dmeta"></div>
@@ -294,6 +302,26 @@ function showPoster(d){
   posterT=setTimeout(hidePoster,5000);   // 재생 신호를 못 받아도 5초 후엔 제거
 }
 function hidePoster(){clearTimeout(posterT);document.getElementById("poster").style.display="none";}
+// 모바일 자동재생 차단 대응: 1.5초 내 재생 시작이 없으면 음소거로라도 재생 + 소리 켜기 버튼.
+// 버튼 탭(사용자 제스처)으로 unMute하면 플레이어를 재사용하므로 이후 영상은 계속 소리 유지
+let playT=0;
+function watchPlay(){
+  clearTimeout(playT);
+  playT=setTimeout(()=>{
+    if(curMode!=="y"||!ytp||!ytp.getPlayerState)return;
+    const s=ytp.getPlayerState();   // 1=재생중 3=버퍼링
+    if(s!==1&&s!==3){try{ytp.mute();ytp.playVideo();showUnmute();}catch(_){}}
+  },1500);
+}
+function showUnmute(){document.getElementById("unmute").classList.add("on");}
+function hideUnmute(){document.getElementById("unmute").classList.remove("on");}
+function doUnmute(){
+  if(curMode==="y"){if(ytp){ytp.unMute();ytp.playVideo();}}
+  else{const f=document.querySelector("#tslot iframe");
+    if(f)f.contentWindow.postMessage({"x-tiktok-player":true,type:"unMute"},"https://www.tiktok.com");}
+  hideUnmute();
+  return false;
+}
 // 틱톡 플레이어는 autoplay 시 기본 음소거로 시작 → 준비되면 unMute 명령 전송
 window.addEventListener("message",ev=>{
   if(ev.origin!=="https://www.tiktok.com")return;
@@ -321,7 +349,7 @@ function onYTReady(){
   if(ytp||apiDead)return;
   ytp=new YT.Player("pframe",{width:"100%",height:"100%",videoId:pendingId,
     playerVars:{autoplay:1,rel:0,playsinline:1,origin:location.origin},
-    events:{onReady:e=>e.target.playVideo(),               // 자동재생 확실히
+    events:{onReady:e=>{e.target.playVideo();watchPlay();},   // 자동재생 확실히
             // stopVideo(틱톡 전환·닫기)도 ended(0)를 쏠 수 있어 YT 슬롯일 때만 자동 다음
             onStateChange:e=>{if(e.data===1)hidePoster();
                               if(e.data===0&&curMode==="y")nav(1);},
@@ -356,10 +384,13 @@ function openDock(id){
   if(el){el.classList.add("sel");el.scrollIntoView({block:"nearest",behavior:"smooth"});}
   pendingId=id;
   showPoster(d);
+  hideUnmute();
   if(d&&d.f==="t"){                      // 🎵 틱톡 → 틱톡 슬롯 (YT 플레이어는 살려둠)
     showSlot("t");                       // curMode 먼저 바꿔야 stopVideo의 ended가 무시됨
     if(ytp){try{ytp.stopVideo();}catch(_){}}
     tiktokEmbed(id.slice(3));            // "tt_" 접두사 제거
+    // 터치 기기는 제스처 없는 unMute가 무시될 수 있음 → 소리 켜기 버튼 노출
+    if(matchMedia("(hover:none)").matches)showUnmute();
   }else{                                 // ▶ YouTube → YT 슬롯 (플레이어 재사용 = 즉시 로드)
     showSlot("y");
     stopTT();
@@ -367,6 +398,7 @@ function openDock(id){
     else if(ytp)ytp.loadVideoById(id);
     else if(window.YT&&YT.Player)onYTReady();
     else loadYT();
+    watchPlay();
   }
 }
 function nav(dir){
@@ -400,6 +432,8 @@ function closeM(){
   else resetFrame("");   // 폴백 모드: iframe 제거로 정지
   stopTT();
   hidePoster();
+  hideUnmute();
+  clearTimeout(playT);
   document.querySelectorAll(".card.sel").forEach(c=>c.classList.remove("sel"));
 }
 document.addEventListener("keydown",e=>{
@@ -419,8 +453,8 @@ document.getElementById("dock").addEventListener("touchend",e=>{
   const dy=tY-e.changedTouches[0].clientY;
   if(Math.abs(dy)>60)nav(dy>0?1:-1);
   tY=null;});
-document.querySelectorAll(".rail,.snav").forEach(el=>el.addEventListener("touchmove",
-  e=>e.preventDefault(),{passive:false}));   // iOS: 레일·버튼 위 스와이프가 스크롤로 새는 것 방지
+document.getElementById("dock").addEventListener("touchmove",
+  e=>e.preventDefault(),{passive:false});   // iOS: 독 위 스와이프가 스크롤로 새는 것 방지
 const sentEl=document.getElementById("sent");
 const sentIO=new IntersectionObserver(es=>{if(es[0].isIntersecting)appendChunk();},
   {rootMargin:"1600px"});   // 화면 1600px 앞에서 미리 다음 청크 로드
