@@ -91,6 +91,7 @@ body.dopen .wrap{margin-right:410px;max-width:none}
   padding:14px 0;color:rgba(255,255,255,.55);font-size:20px;touch-action:none;
   background:linear-gradient(to left,rgba(0,0,0,.28),transparent)}
 /* 이전/다음: 플레이어 오른쪽 가장자리 세로 배치 — 모바일에서도 표시(오른손 엄지 조작) */
+.snav,.snav button{touch-action:none}   /* 버튼 위에서 시작한 스와이프도 스크롤로 새지 않게 */
 .snav{position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:4;
   display:flex;flex-direction:column;gap:14px}
 .snav button{width:46px;height:46px;border-radius:50%;border:1px solid var(--line);
@@ -416,8 +417,8 @@ document.getElementById("dock").addEventListener("touchend",e=>{
   const dy=tY-e.changedTouches[0].clientY;
   if(Math.abs(dy)>60)nav(dy>0?1:-1);
   tY=null;});
-document.getElementById("rail").addEventListener("touchmove",
-  e=>e.preventDefault(),{passive:false});   // iOS: 레일 위 스와이프가 스크롤로 새는 것 방지
+document.querySelectorAll(".rail,.snav").forEach(el=>el.addEventListener("touchmove",
+  e=>e.preventDefault(),{passive:false}));   // iOS: 레일·버튼 위 스와이프가 스크롤로 새는 것 방지
 const sentEl=document.getElementById("sent");
 const sentIO=new IntersectionObserver(es=>{if(es[0].isIntersecting)appendChunk();},
   {rootMargin:"1600px"});   // 화면 1600px 앞에서 미리 다음 청크 로드
