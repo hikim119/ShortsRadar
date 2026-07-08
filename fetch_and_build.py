@@ -25,8 +25,8 @@ CATEGORY_ID = "1"     # 1 = Film & Animation (영화/애니메이션)
 MAX_DUR_S   = 300     # 이 길이(초) 이하만 표시 — 5분 미만
 PAGES       = 4       # mostPopular 최대 200개 (50×4)
 KEEP_DAYS   = 8       # 기록 보관 일수 (7일 필터 + 1일 여유)
-HOT_VIEWS   = 200_000 # 🔥 핫존: 게시 후 HOT_HOURS 안에 이 조회수를 넘긴 영상
-HOT_HOURS   = 72
+HOT_HOURS   = 72      # 🔥 핫존: 게시 후 이 시간 안에 아래 조회수를 돌파한 영상
+HOT_TIERS   = [(500_000, 2), (200_000, 1)]   # (조회수, h값) — 높은 티어 우선
 KST         = timezone(timedelta(hours=9))
 
 # ── 검색 수집 계획 ───────────────────────────────────────────────────────────
@@ -549,10 +549,14 @@ const BUCKETS=[[0,Infinity,"전체"],[1e5,5e5,"10만-50만"],[5e5,1e6,"50만-100
 const SORTS=[["v","조회수"],["g","🔥 증가속도"],["p","최신"]];
 const CHANS=[["전체"],["📌 관심채널"]];
 const PFS=[["전체"],["▶ YouTube"],["🎵 TikTok"]];
-const HOTS=[["전체"],["🔥 핫존"]];
+const HOTS=[["전체"],["🔥 20만+"],["🔥 50만+"]];
 let win=1, bkt=0, srt="v", chn=0, pfl=0, hzf=0;   // 기본: 1일·전체·조회수순 (AI 영상은 항상 제외)
-// 🔥 핫존 = 게시 72시간 안에 20만뷰 돌파. h(수집 스냅샷 판정) 또는 즉시 판정(아직 72시간 이내)
-function isHot(d){return !!(d.h||(NOW-d.p<=259200&&d.v>=2e5));}
+// 🔥 핫존 = 게시 72시간 안에 20만(1)/50만(2) 돌파. h(수집 스냅샷 판정) + 즉시 판정(아직 72시간 이내)
+function hotLvl(d){
+  let l=d.h||0;
+  if(NOW-d.p<=259200){if(d.v>=5e5)l=Math.max(l,2);else if(d.v>=2e5)l=Math.max(l,1);}
+  return l;
+}
 // 삭제 목록: 카드 ✕ 버튼 → localStorage 저장(브라우저별) · 8일 지난 기록은 자동 정리
 const DELKEY="sr_del";
 let DEL={};
@@ -598,7 +602,7 @@ function render(){
   rows=rows.filter(d=>!DEL[d.i]);   // 사용자가 ✕로 지운 영상 제외 (AI 영상은 수집 단계 제외)
   if(pfl===1)rows=rows.filter(d=>!d.f);
   if(pfl===2)rows=rows.filter(d=>d.f==="t");
-  if(hzf===1)rows=rows.filter(isHot);
+  if(hzf)rows=rows.filter(d=>hotLvl(d)>=hzf);
   if(srt==="v")rows.sort((a,b)=>b.v-a.v);
   else if(srt==="p")rows.sort((a,b)=>b.p-a.p);
   else rows.sort((a,b)=>(b.g||-1)-(a.g||-1));
@@ -613,7 +617,8 @@ function cardHTML(d,i){
   const g=d.g==null?"":`<span class="chip ${d.g>=10000?"hot":"g"}">+${fmt(d.g)}/h</span>`;
   const nw=(NOW-d.n)<93600?'<span class="chip new">NEW</span>':"";
   const st=d.s?'<span class="chip new">📌</span>':"";
-  const hz=isHot(d)?'<span class="chip hot">🔥</span>':"";
+  const hl=hotLvl(d);
+  const hz=hl?'<span class="chip hot">🔥'+(hl===2?"50만":"20만")+'</span>':"";
   const pc=d.f?'<span class="chip tt">TikTok</span>':"";
   const url=d.f?d.u:`https://www.youtube.com/shorts/${d.i}`;
   const th=d.f?d.th:`https://i.ytimg.com/vi/${d.i}/mqdefault.jpg`;   // 16:9·경량(카드에 충분)
@@ -900,14 +905,19 @@ def build_html(hist, now):
             entry["l"] = round(likes / v_now * 100, 1)
         if r.get("ch"):
             entry["s"] = 1
-        # 🔥 핫존: 스냅샷 중 HOT_VIEWS를 처음 넘긴 시점이 게시 HOT_HOURS 이내면 플래그
-        for s_ in r["snapshots"]:
-            if s_["views"] >= HOT_VIEWS:
-                try:
-                    if datetime.fromisoformat(s_["t"]).timestamp() - p <= HOT_HOURS * 3600:
-                        entry["h"] = 1
-                except ValueError:
-                    pass
+        # 🔥 핫존: 티어 조회수를 처음 넘긴 스냅샷 시점이 게시 HOT_HOURS 이내면 h=티어
+        for th, lvl in HOT_TIERS:
+            hit = False
+            for s_ in r["snapshots"]:
+                if s_["views"] >= th:
+                    try:
+                        hit = (datetime.fromisoformat(s_["t"]).timestamp() - p
+                               <= HOT_HOURS * 3600)
+                    except ValueError:
+                        pass
+                    break
+            if hit:
+                entry["h"] = lvl
                 break
         if r.get("pf") == "tt":   # 틱톡: 플랫폼·썸네일·원본링크
             entry["f"] = "t"
