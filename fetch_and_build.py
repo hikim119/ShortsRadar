@@ -493,6 +493,7 @@ body.dopen .wrap{margin-right:410px;max-width:none}
 .mbtn{background:var(--panel);border:1px solid var(--line);color:var(--txt);
   padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;text-decoration:none}
 .mbtn:hover{border-color:var(--acc)}
+.mbtn.warn:hover{border-color:#e5484d;color:#ff8589}
 .card.sel{border-color:var(--acc);box-shadow:0 0 0 2px rgba(124,133,240,.35)}
 @media(max-width:900px){.dock{width:100vw}body.dopen .wrap{margin-right:0}}
 footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
@@ -535,6 +536,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
   <div class="dmeta" id="dmeta"></div>
   <div class="mrow">
     <button class="mbtn" id="mcopy" onclick="copyUrl()">url 복사</button>
+    <button class="mbtn warn" onclick="delCurrent()" title="목록에서 삭제하고 다음 영상 (Del/X)">🗑 삭제</button>
     <button class="mbtn" onclick="closeM()">닫기</button>
     <button class="mbtn" onclick="nav(-1)" style="margin-left:auto">▲ 이전</button>
     <button class="mbtn" onclick="nav(1)">▼ 다음</button>
@@ -569,6 +571,16 @@ function saveDel(){try{localStorage.setItem(DELKEY,JSON.stringify(DEL));}catch(_
 {let ch=false;const cut=NOW-8*86400;   // 그 시점엔 데이터에서도 이미 빠져 있음
  for(const k in DEL)if(DEL[k]<cut){delete DEL[k];ch=true;}
  if(ch)saveDel();}
+// 재생 중인 영상을 목록에서 삭제하고 바로 다음 영상 재생 (독 안 🗑 버튼 · Del/X 키)
+function delCurrent(){
+  if(!pendingId)return;
+  const idx=curIdx;
+  DEL[pendingId]=NOW; saveDel();
+  render();                                 // RCUR 재계산 → 삭제된 영상이 빠짐
+  if(!RCUR.length){closeM();return;}
+  curIdx=Math.min(idx,RCUR.length-1);       // 삭제로 한 칸 당겨진 그 자리 = 다음 영상
+  openDock(RCUR[curIdx].i);
+}
 function delVideo(e,id){
   e.preventDefault();e.stopPropagation();
   DEL[id]=NOW; saveDel();
@@ -856,6 +868,7 @@ document.addEventListener("keydown",e=>{
   if(!document.getElementById("dock").classList.contains("on"))return;
   if(e.key==="ArrowDown"){e.preventDefault();nav(1);}
   if(e.key==="ArrowUp"){e.preventDefault();nav(-1);}
+  if(e.key==="Delete"||e.key==="x"||e.key==="X"){e.preventDefault();delCurrent();}
 });
 // 독 위에서 휠 = 이전/다음 (플레이어 화면 밖 영역)
 document.getElementById("dock").addEventListener("wheel",e=>{
