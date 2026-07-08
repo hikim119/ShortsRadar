@@ -126,6 +126,7 @@ footer{color:#4a4d5e;font-size:11px;padding:0 0 30px}
 
 <div class="filters">
   <div class="frow"><span class="flabel">플랫폼</span><span id="pfs"></span>
+    <span class="flabel" style="margin-left:14px">핫존</span><span id="hots"></span>
     <span class="count" id="count"></span></div>
   <div class="frow"><span class="flabel">기간</span><span id="wins"></span></div>
   <div class="frow"><span class="flabel">조회수</span><span id="buckets"></span></div>
@@ -171,7 +172,10 @@ const BUCKETS=[[0,Infinity,"전체"],[1e5,5e5,"10만-50만"],[5e5,1e6,"50만-100
 const SORTS=[["v","조회수"],["g","🔥 증가속도"],["p","최신"]];
 const CHANS=[["전체"],["📌 관심채널"]];
 const PFS=[["전체"],["▶ YouTube"],["🎵 TikTok"]];
-let win=1, bkt=0, srt="v", chn=0, pfl=0;   // 기본: 1일·전체·조회수순 (AI 영상은 항상 제외)
+const HOTS=[["전체"],["🔥 핫존"]];
+let win=1, bkt=0, srt="v", chn=0, pfl=0, hzf=0;   // 기본: 1일·전체·조회수순 (AI 영상은 항상 제외)
+// 🔥 핫존 = 게시 72시간 안에 20만뷰 돌파. h(수집 스냅샷 판정) 또는 즉시 판정(아직 72시간 이내)
+function isHot(d){return !!(d.h||(NOW-d.p<=259200&&d.v>=2e5));}
 // 삭제 목록: 카드 ✕ 버튼 → localStorage 저장(브라우저별) · 8일 지난 기록은 자동 정리
 const DELKEY="sr_del";
 let DEL={};
@@ -202,7 +206,7 @@ function pills(elId,arr,cur,fn){
 
 function setWin(i){win=i;render();} function setBkt(i){bkt=i;render();}
 function setSrt(i){srt=SORTS[i][0];render();} function setChn(i){chn=i;render();}
-function setPfl(i){pfl=i;render();}
+function setPfl(i){pfl=i;render();} function setHzf(i){hzf=i;render();}
 
 function render(){
   pills("wins",WINS,win,"setWin");
@@ -210,12 +214,14 @@ function render(){
   pills("sorts",SORTS,SORTS.findIndex(s=>s[0]===srt),"setSrt");
   pills("chans",CHANS,chn,"setChn");
   pills("pfs",PFS,pfl,"setPfl");
+  pills("hots",HOTS,hzf,"setHzf");
   const [lo,hi]=BUCKETS[bkt];
   let rows=DATA.filter(d=>NOW-d.p<=WINS[win][0]&&d.v>=lo&&d.v<hi);
   if(chn===1)rows=rows.filter(d=>d.s);
   rows=rows.filter(d=>!DEL[d.i]);   // 사용자가 ✕로 지운 영상 제외 (AI 영상은 수집 단계 제외)
   if(pfl===1)rows=rows.filter(d=>!d.f);
   if(pfl===2)rows=rows.filter(d=>d.f==="t");
+  if(hzf===1)rows=rows.filter(isHot);
   if(srt==="v")rows.sort((a,b)=>b.v-a.v);
   else if(srt==="p")rows.sort((a,b)=>b.p-a.p);
   else rows.sort((a,b)=>(b.g||-1)-(a.g||-1));
@@ -230,6 +236,7 @@ function cardHTML(d,i){
   const g=d.g==null?"":`<span class="chip ${d.g>=10000?"hot":"g"}">+${fmt(d.g)}/h</span>`;
   const nw=(NOW-d.n)<93600?'<span class="chip new">NEW</span>':"";
   const st=d.s?'<span class="chip new">📌</span>':"";
+  const hz=isHot(d)?'<span class="chip hot">🔥</span>':"";
   const pc=d.f?'<span class="chip tt">TikTok</span>':"";
   const url=d.f?d.u:`https://www.youtube.com/shorts/${d.i}`;
   const th=d.f?d.th:`https://i.ytimg.com/vi/${d.i}/mqdefault.jpg`;   // 16:9·경량(카드에 충분)
@@ -244,7 +251,7 @@ function cardHTML(d,i){
       <button class="del" title="목록에서 삭제" onclick="return delVideo(event,'${d.i}')">✕</button></div>
     <div class="body"><div class="title">${d.t.replace(/</g,"&lt;")}</div>
       <div class="ch">${d.c.replace(/</g,"&lt;")}</div>
-      <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${nw}${st}${pc}
+      <div class="stats"><span class="views">${fmt(d.v)}</span>${g}${hz}${nw}${st}${pc}
         <span class="age">${age(d.p)}</span></div>
       ${metaHtml}</div></a>`;
 }
