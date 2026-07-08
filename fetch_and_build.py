@@ -26,7 +26,7 @@ MAX_DUR_S   = 300     # 이 길이(초) 이하만 표시 — 5분 미만
 PAGES       = 4       # mostPopular 최대 200개 (50×4)
 KEEP_DAYS   = 8       # 기록 보관 일수 (7일 필터 + 1일 여유)
 HOT_HOURS   = 72      # 🔥 핫존: 게시 후 이 시간 안에 아래 조회수를 돌파한 영상
-HOT_TIERS   = [(500_000, 2), (200_000, 1)]   # (조회수, h값) — 높은 티어 우선
+HOT_TIERS   = [(500_000, 3), (200_000, 2), (100_000, 1)]   # (조회수, h값) — 높은 티어 우선
 KST         = timezone(timedelta(hours=9))
 
 # ── 검색 수집 계획 ───────────────────────────────────────────────────────────
@@ -549,12 +549,16 @@ const BUCKETS=[[0,Infinity,"전체"],[1e5,5e5,"10만-50만"],[5e5,1e6,"50만-100
 const SORTS=[["v","조회수"],["g","🔥 증가속도"],["p","최신"]];
 const CHANS=[["전체"],["📌 관심채널"]];
 const PFS=[["전체"],["▶ YouTube"],["🎵 TikTok"]];
-const HOTS=[["전체"],["🔥 20만+"],["🔥 50만+"]];
+const HOTS=[["전체"],["🔥 10만+"],["🔥 20만+"],["🔥 50만+"]];
 let win=1, bkt=0, srt="v", chn=0, pfl=0, hzf=0;   // 기본: 1일·전체·조회수순 (AI 영상은 항상 제외)
-// 🔥 핫존 = 게시 72시간 안에 20만(1)/50만(2) 돌파. h(수집 스냅샷 판정) + 즉시 판정(아직 72시간 이내)
+// 🔥 핫존 = 게시 72시간 안에 10만(1)/20만(2)/50만(3) 돌파. h(수집 스냅샷 판정) + 즉시 판정(72시간 이내)
 function hotLvl(d){
   let l=d.h||0;
-  if(NOW-d.p<=259200){if(d.v>=5e5)l=Math.max(l,2);else if(d.v>=2e5)l=Math.max(l,1);}
+  if(NOW-d.p<=259200){
+    if(d.v>=5e5)l=Math.max(l,3);
+    else if(d.v>=2e5)l=Math.max(l,2);
+    else if(d.v>=1e5)l=Math.max(l,1);
+  }
   return l;
 }
 // 삭제 목록: 카드 ✕ 버튼 → localStorage 저장(브라우저별) · 8일 지난 기록은 자동 정리
@@ -618,7 +622,7 @@ function cardHTML(d,i){
   const nw=(NOW-d.n)<93600?'<span class="chip new">NEW</span>':"";
   const st=d.s?'<span class="chip new">📌</span>':"";
   const hl=hotLvl(d);
-  const hz=hl?'<span class="chip hot">🔥'+(hl===2?"50만":"20만")+'</span>':"";
+  const hz=hl?'<span class="chip hot">🔥'+(hl===3?"50만":hl===2?"20만":"10만")+'</span>':"";
   const pc=d.f?'<span class="chip tt">TikTok</span>':"";
   const url=d.f?d.u:`https://www.youtube.com/shorts/${d.i}`;
   const th=d.f?d.th:`https://i.ytimg.com/vi/${d.i}/mqdefault.jpg`;   // 16:9·경량(카드에 충분)
