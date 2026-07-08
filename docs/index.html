@@ -214,7 +214,9 @@ function pills(elId,arr,cur,fn){
 
 function setWin(i){win=i;render();} function setBkt(i){bkt=i;render();}
 function setSrt(i){srt=SORTS[i][0];render();} function setChn(i){chn=i;render();}
-function setPfl(i){pfl=i;render();} function setHzf(i){hzf=i;render();}
+function setPfl(i){pfl=i;render();}
+// 핫존은 게시 1~3일 뒤에야 판정되는 영상이 대부분 → 켜면 기간을 7일로 자동 확장
+function setHzf(i){hzf=i;if(i&&win<3)win=3;render();}
 
 function render(){
   pills("wins",WINS,win,"setWin");
